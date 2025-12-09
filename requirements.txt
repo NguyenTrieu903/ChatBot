@@ -12,7 +12,10 @@ langchain-pinecone>=0.2.0  # Pinecone integration with PineconeEmbeddings
 langchain-text-splitters>=0.2.0  # Text chunking
 
 # Vector database - Pinecone (Production-ready, scalable)
-pinecone
+# Pin to version 5.x to avoid deprecated plugin errors
+# Note: If you see DeprecatedPluginError, uninstall any old pinecone plugins:
+# pip uninstall pinecone-plugin-inference -y
+pinecone>=5.0.0,<6.0.0
 
 # Web UI
 streamlit>=1.28.0

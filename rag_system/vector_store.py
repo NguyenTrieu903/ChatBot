@@ -7,6 +7,18 @@ import os
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 
+# Workaround for Pinecone deprecated plugin error
+# This must be done BEFORE importing pinecone
+os.environ.setdefault("PINECONE_DISABLE_DEPRECATED_PLUGIN_CHECK", "1")
+
+# Monkey patch to bypass deprecated plugin check if needed
+try:
+    import pinecone.deprecated_plugins as deprecated_plugins
+    # Override the check function to do nothing
+    deprecated_plugins.check_for_deprecated_plugins = lambda: None
+except (ImportError, AttributeError):
+    pass
+
 from langchain_pinecone import PineconeEmbeddings, PineconeVectorStore
 from langchain_core.documents import Document
 from pinecone import Pinecone

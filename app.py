@@ -1,5 +1,9 @@
 """Streamlit UI cho Vietnamese Chatbot với Google Gemini AI."""
 
+# Fix Pinecone deprecated plugin error - MUST be before any imports
+import os
+os.environ.setdefault("PINECONE_DISABLE_DEPRECATED_PLUGIN_CHECK", "1")
+
 import streamlit as st
 import sys
 from pathlib import Path
