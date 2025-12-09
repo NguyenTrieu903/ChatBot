@@ -1,18 +1,20 @@
-"""Streamlit UI cho Vietnamese Chatbot với Google Gemini AI."""
+"""Streamlit UI for Vietnamese Chatbot."""
 
-# Fix Pinecone deprecated plugin error - MUST be before any imports
-import os
-os.environ.setdefault("PINECONE_DISABLE_DEPRECATED_PLUGIN_CHECK", "1")
-
-import streamlit as st
 import sys
 from pathlib import Path
 from datetime import datetime
 
-# Add project root to path
-sys.path.append(str(Path(__file__).parent))
+# Fix Pinecone deprecated plugin error - MUST be before any imports
+# This is handled in rag_system.config, but we set it here for safety
+import os
+os.environ.setdefault("PINECONE_DISABLE_DEPRECATED_PLUGIN_CHECK", "1")
 
-from vietnamese_chatbot import VietnameseChatbot
+import streamlit as st
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from main import ChatBot
 
 
 # Page config
@@ -111,7 +113,7 @@ def main():
     if not st.session_state.initialized:
         with st.spinner("🤖 Đang khởi tạo chatbot..."):
             try:
-                st.session_state.chatbot = VietnameseChatbot()
+                st.session_state.chatbot = ChatBot()
                 st.session_state.initialized = True
             except Exception as e:
                 st.error(f"❌ Lỗi khởi tạo: {str(e)}")

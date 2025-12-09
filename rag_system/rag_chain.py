@@ -1,4 +1,9 @@
-import os
+"""RAG Chain implementation using LangChain best practices.
+
+This module implements a production-ready RAG (Retrieval-Augmented Generation) chain
+using Pinecone for vector storage and Groq AI for LLM inference.
+"""
+
 from typing import List, Dict, Any, Optional
 
 from langchain_groq import ChatGroq
@@ -6,119 +11,158 @@ from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain.memory import ConversationBufferWindowMemory
-from dotenv import load_dotenv
-
-from .vector_store import VectorStore
 from langchain_core.runnables import RunnableLambda
 from operator import itemgetter
-from .utils.common import format_docs
-from data_loader import load_and_chunk_json
 
-load_dotenv()
+from .core.config import (
+    LLM_MODEL,
+    LLM_TEMPERATURE,
+    LLM_MAX_TOKENS,
+    RETRIEVER_K,
+    RETRIEVER_SCORE_THRESHOLD,
+    MEMORY_WINDOW_SIZE,
+    CHUNK_SIZE,
+    CHUNK_OVERLAP,
+    JSON_DATA_FILE,
+    DEFAULT_USE_CASE,
+    validate_config
+)
+from .core.logger import get_logger
+from .core.exceptions import ConfigurationError, RetrievalError, LLMError
+from .pinecone.vector_store import VectorStore
+from .utils.common import format_docs
+from loaders.data_loader import load_and_chunk_json
+
+logger = get_logger(__name__)
 
 
 class RAGChain:
-    def __init__(self, use_case: str = "vietnamese_support", k: int = 1):
+    """Production-ready RAG chain with memory management.
+    
+    Implements retrieval-augmented generation with:
+    - Pinecone vector store for document retrieval
+    - Groq AI for LLM inference
+    - ConversationBufferWindowMemory for context management
+    - Proper error handling and logging
+    """
+    
+    def __init__(
+        self,
+        use_case: str = DEFAULT_USE_CASE,
+        memory_window_size: int = MEMORY_WINDOW_SIZE
+    ):
         """Initialize RAG chain.
         
         Args:
-            use_case: Use case name
-            k: Number of conversation exchanges to keep in memory (default: 5)
+            use_case: Use case identifier for vector store
+            memory_window_size: Number of conversation exchanges to keep in memory
+            
+        Raises:
+            ConfigurationError: If required configuration is missing
         """
+        validate_config()
+        
         self.use_case = use_case
-        print(f"🔧 Initializing RAG chain for use case: {use_case}")
+        self.memory_window_size = memory_window_size
+        
+        logger.info(f"Initializing RAG chain for use case: {use_case}")
+        
+        # Initialize components
         self.vector_store = VectorStore(use_case)
         self.llm = self._initialize_llm()
         self.prompt = self._create_prompt()
         self._initialize_vector_store()
-        print("🔍 Initializing retriever...")
-        self.retriever = self.vector_store.get_retriever(k=5, score_threshold=None)
         
-        # Initialize ConversationBufferWindowMemory
-        # k=5 means keep last 5 conversation exchanges (10 messages: 5 user + 5 assistant)
-        print(f"💾 Initializing ConversationBufferWindowMemory (k={k})...")
+        # Initialize retriever
+        logger.info("Initializing retriever...")
+        self.retriever = self.vector_store.get_retriever(
+            k=RETRIEVER_K,
+            score_threshold=RETRIEVER_SCORE_THRESHOLD
+        )
+        
+        # Initialize memory
+        logger.info(f"Initializing ConversationBufferWindowMemory (k={memory_window_size})...")
         self.memory = ConversationBufferWindowMemory(
             memory_key="chat_history",
             return_messages=True,
-            k=k  # Keep last k conversation exchanges
+            k=memory_window_size
         )
         
-        print("🔗 Creating RAG chain...")
+        # Create RAG chain
+        logger.info("Creating RAG chain...")
         self.chain = self._create_rag_chain()
         self._log_index_stats()
-
+    
     def _initialize_llm(self) -> ChatGroq:
         """Initialize Groq LLM.
         
         Returns:
             ChatGroq instance
+            
+        Raises:
+            LLMError: If LLM initialization fails
         """
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("GROQ_API_KEY not found in .env file")
-        
-        return ChatGroq(
-            model="llama-3.3-70b-versatile",
-            api_key=api_key,
-            temperature=0.7,
-            max_tokens=8000
-        )
-
+        try:
+            from .core.config import GROQ_API_KEY
+            return ChatGroq(
+                model=LLM_MODEL,
+                api_key=GROQ_API_KEY,
+                temperature=LLM_TEMPERATURE,
+                max_tokens=LLM_MAX_TOKENS
+            )
+        except Exception as e:
+            raise LLMError(f"Failed to initialize LLM: {e}") from e
+    
     def _create_prompt(self) -> ChatPromptTemplate:
-        """Create optimized prompt template following best practices.
+        """Create optimized prompt template.
         
         Returns:
             ChatPromptTemplate instance
         """
         system_message = """Bạn là trợ lý AI thông minh, hỗ trợ người dùng bằng tiếng Việt.
 
-                            Nhiệm vụ của bạn:
-                            1. Sử dụng thông tin từ cơ sở dữ liệu (context) để trả lời chính xác
-                            2. Cung cấp hướng dẫn chi tiết, rõ ràng và dễ hiểu  
-                            3. Luôn trả lời bằng tiếng Việt
-                            4. Thân thiện và chuyên nghiệp
+Nhiệm vụ của bạn:
+1. Sử dụng thông tin từ cơ sở dữ liệu (context) để trả lời chính xác
+2. Cung cấp hướng dẫn chi tiết, rõ ràng và dễ hiểu  
+3. Luôn trả lời bằng tiếng Việt
+4. Thân thiện và chuyên nghiệp
 
-                            Thông tin từ cơ sở dữ liệu:
-                            {context}
+Thông tin từ cơ sở dữ liệu:
+{context}
 
-                            Lưu ý:
-                            - Nếu có thông tin trong context, hãy dựa vào đó để trả lời
-                            - Khi người dùng hỏi "giá như thế nào", "liều dùng như thế nào" mà KHÔNG đề cập tên sản phẩm 
-                            → Họ đang hỏi về sản phẩm được đề cập ở CÂU HỎI GẦN NHẤT
-                            - Khi người dùng dùng từ "này", "đó", "thuốc này", "sản phẩm này" 
-                            → Họ đang nói về sản phẩm được đề cập ở câu hỏi trước
-                            - LUÔN ưu tiên sản phẩm từ câu hỏi GẦN NHẤT, không phải câu hỏi cũ hơn
-                            - Nếu không có thông tin trong context, hãy trả lời dựa trên kiến thức của bạn
-                            - Luôn cố gắng hữu ích nhất có thể"""
+Lưu ý:
+- Nếu có thông tin trong context, hãy dựa vào đó để trả lời
+- Khi người dùng hỏi "giá như thế nào", "liều dùng như thế nào" mà KHÔNG đề cập tên sản phẩm 
+  → Họ đang hỏi về sản phẩm được đề cập ở CÂU HỎI GẦN NHẤT
+- Khi người dùng dùng từ "này", "đó", "thuốc này", "sản phẩm này" 
+  → Họ đang nói về sản phẩm được đề cập ở câu hỏi trước
+- LUÔN ưu tiên sản phẩm từ câu hỏi GẦN NHẤT, không phải câu hỏi cũ hơn
+- Nếu không có thông tin trong context, hãy trả lời dựa trên kiến thức của bạn
+- Luôn cố gắng hữu ích nhất có thể"""
         
-        # Create prompt with chat history support
-        messages = [
+        return ChatPromptTemplate.from_messages([
             ("system", system_message),
-            MessagesPlaceholder(variable_name="chat_history"),  # LangChain will handle chat history
+            MessagesPlaceholder(variable_name="chat_history"),
             ("human", "{question}")
-        ]
-        
-        return ChatPromptTemplate.from_messages(messages)
-
+        ])
+    
     def _create_rag_chain(self):
-        """Create RAG chain following LangChain best practices.
-        
-        Uses LangChain Retriever for better integration.
+        """Create RAG chain using LCEL.
         
         Returns:
-            RAG chain using LCEL (LangChain Expression Language)
+            RAG chain using LangChain Expression Language
+            
+        Raises:
+            RetrievalError: If retriever is not initialized
         """
         if self.retriever is None:
-            raise ValueError("Retriever not initialized. Call _initialize_vector_store() first.")        
+            raise RetrievalError("Retriever not initialized")
         
-        # Build RAG chain using LCEL
-        # The retriever automatically handles query embedding with PineconeEmbeddings
-        # Memory will be loaded and saved in chat() method
         rag_chain = (
             {
                 "context": itemgetter("question") | self.retriever | RunnableLambda(format_docs),
                 "question": itemgetter("question"),
-                "chat_history": itemgetter("chat_history")  # Load from memory
+                "chat_history": itemgetter("chat_history")
             }
             | self.prompt
             | self.llm
@@ -126,73 +170,71 @@ class RAGChain:
         )
         
         return rag_chain
-
-    def _initialize_vector_store(self):
+    
+    def _initialize_vector_store(self) -> None:
         """Initialize vector store with data from JSON file.
         
         Flow: JSON Data → Chunking → PineconeEmbeddings → Pinecone Index
-        
-        Uses VectorStore methods:
-        - index_exists(): Check if index exists
-        - create_index(): Create index with documents (handles embeddings automatically)
-        - load_index(): Connect to existing index
-        - get_stats(): Get index statistics
         """
-        # Check if index exists and has data
-        index_exists = self.vector_store.index_exists()
-        
-        if index_exists:
-            # Try to load existing index
+        if self.vector_store.index_exists():
             try:
                 self.vector_store.load_index()
-                
-                # Check if index has vectors
                 stats = self.vector_store.get_stats()
                 vector_count = stats.get('total_vectors', 0)
                 
                 if vector_count > 0:
-                    print(f"✅ Pinecone index '{self.vector_store.index_name}' đã tồn tại với {vector_count} vectors")
-                    print("   Sử dụng index hiện có...")
+                    logger.info(
+                        f"Pinecone index '{self.vector_store.index_name}' exists "
+                        f"with {vector_count} vectors"
+                    )
                     return
                 else:
-                    print(f"⚠️  Index tồn tại nhưng chưa có vectors, đang tạo mới...")
+                    logger.warning("Index exists but has no vectors, creating new one...")
             except Exception as e:
-                print(f"⚠️  Không thể load index hiện có: {e}")
-                print("   Đang tạo index mới...")
+                logger.warning(f"Could not load existing index: {e}, creating new one...")
         
-        # Index doesn't exist or is empty, create new one
-        print(f"📚 Đang tạo Pinecone index cho {self.use_case}...")
+        # Create new index
+        logger.info(f"Creating Pinecone index for {self.use_case}...")
         
-        # Load from JSON file with chunking  
-        chunked_docs = load_and_chunk_json("data/traning.json", 1000, 200)
-
-        print("📤 Đang upload chunks lên Pinecone...")
-        print("   (PineconeEmbeddings đang được tạo tự động...)")
+        if not JSON_DATA_FILE.exists():
+            raise ConfigurationError(f"Data file not found: {JSON_DATA_FILE}")
+        
+        chunked_docs = load_and_chunk_json(
+            str(JSON_DATA_FILE),
+            chunk_size=CHUNK_SIZE,
+            chunk_overlap=CHUNK_OVERLAP
+        )
+        
+        if not chunked_docs:
+            raise ConfigurationError("No documents loaded from JSON file")
+        
+        logger.info(f"Loaded {len(chunked_docs)} chunks from JSON")
+        logger.info("Uploading chunks to Pinecone...")
+        
         self.vector_store.create_index(chunked_docs)
         
-        print(f"✅ Hoàn thành: {len(chunked_docs)} chunks đã được embed và upload lên Pinecone")
+        logger.info(f"Successfully uploaded {len(chunked_docs)} chunks to Pinecone")
     
-    def _log_index_stats(self):
-        """Log index statistics for debugging."""
+    def _log_index_stats(self) -> None:
+        """Log index statistics for monitoring."""
         try:
             stats = self.vector_store.get_stats()
-            print(f"\n📊 Pinecone Index Statistics: success")
+            logger.info(f"Index stats: {stats.get('total_vectors', 0)} vectors")
             if 'error' in stats:
-                print(f"   ⚠️  Warning: {stats.get('error', '')}")
+                logger.warning(f"Index stats error: {stats.get('error', '')}")
         except Exception as e:
-            print(f"⚠️  Could not get index stats: {e}")
-
-
+            logger.warning(f"Could not get index stats: {e}")
+    
     def chat(
         self,
         question: str,
         chat_history: Optional[List[BaseMessage]] = None
     ) -> Dict[str, Any]:
-        """Chat with the bot using RAG with ConversationBufferWindowMemory.
+        """Chat with the bot using RAG.
         
         Args:
             question: User question
-            chat_history: Previous messages (optional, will use memory if not provided)
+            chat_history: Previous messages (optional, uses memory if not provided)
             
         Returns:
             Response dictionary with answer and metadata
@@ -200,28 +242,19 @@ class RAGChain:
         try:
             # Load chat history from memory if not provided
             if chat_history is None:
-                # Get chat history from memory
                 memory_variables = self.memory.load_memory_variables({})
                 chat_history = memory_variables.get("chat_history", [])
-            else:
-                # Use provided chat history (for backward compatibility)
-                pass
             
-            # Prepare input for RAG chain
+            # Prepare chain input
             chain_input = {
                 "question": question,
                 "chat_history": chat_history
             }
             
-            # Generate response using RAG chain
-            # The chain will:
-            # 1. Retrieve documents using retriever (with PineconeEmbeddings)
-            # 2. Format documents into context
-            # 3. Pass to LLM with prompt (including chat history)
+            # Generate response
             response = self.chain.invoke(chain_input)
             
-            # Save conversation to memory
-            # Memory will automatically keep only last k exchanges
+            # Save to memory
             self.memory.save_context(
                 {"input": question},
                 {"output": response}
@@ -233,8 +266,7 @@ class RAGChain:
             }
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error in chat: {e}", exc_info=True)
             return {
                 "answer": f"Xin lỗi, đã xảy ra lỗi: {str(e)}",
                 "retrieved_documents": [],
@@ -242,12 +274,11 @@ class RAGChain:
                 "error": str(e)
             }
     
-    def clear_memory(self):
+    def clear_memory(self) -> None:
         """Clear conversation memory."""
         self.memory.clear()
-        print("🗑️  Đã xóa lịch sử hội thoại")
+        logger.info("Conversation memory cleared")
 
 
 # Backward compatibility alias
 RetrievalChain = RAGChain
-

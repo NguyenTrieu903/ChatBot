@@ -19,8 +19,8 @@ if not os.getenv("PINECONE_API_KEY"):
     sys.exit(1)
 
 try:
-    from rag_system.vector_store import VectorStore
-    from data_loader import load_and_chunk_json
+    from rag_system.pinecone.vector_store import VectorStore
+    from loaders.data_loader import load_and_chunk_json
     
     # Initialize vector store
     vector_store = VectorStore("vietnamese_support")
@@ -82,7 +82,7 @@ try:
     print("🎉 HOÀN TẤT! Index đã được tạo lại với format mới.")
     print("="*70)
     print("\n💡 Bây giờ bạn có thể chạy chatbot:")
-    print("   python vietnamese_chatbot.py")
+    print("   python main.py")
     print("   hoặc")
     print("   streamlit run app.py")
     
