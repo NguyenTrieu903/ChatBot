@@ -36,17 +36,18 @@ class VietnameseChatbot:
                 "   Lấy API key miễn phí tại: https://console.groq.com/keys"
             )
         
-        self.retrieval_chain = RetrievalChain(use_case="vietnamese_support")
+        self.retrieval_chain = RetrievalChain(use_case="vietnamese_support", k=5)
         
-        # LangChain native chat history (theo Real Python tutorial)
-        # MessagesPlaceholder trong prompt sẽ tự động quản lý context
-        self.chat_history = []
+        # Memory is now managed by ConversationBufferWindowMemory in RAGChain
+        # No need to manually manage chat_history
         
         print("✅ Chatbot đã sẵn sàng!")
-        print("💾 Sử dụng LangChain native chat history (best practice)")
+        print("💾 Sử dụng ConversationBufferWindowMemory (k=5 exchanges)")
     
     def chat(self, user_message: str) -> dict:
-        """Chat with user and update chat history.
+        """Chat with user.
+        
+        Memory is automatically managed by ConversationBufferWindowMemory in RAGChain.
         
         Args:
             user_message: User's message
@@ -54,26 +55,15 @@ class VietnameseChatbot:
         Returns:
             Response dictionary with answer
         """
-        # Add user message to history
-        from langchain_core.messages import HumanMessage, AIMessage
-        
         # Get response from RAG chain
-        response = self.retrieval_chain.chat(user_message, self.chat_history)
-        
-        # Update chat history with user message and bot response
-        self.chat_history.append(HumanMessage(content=user_message))
-        self.chat_history.append(AIMessage(content=response.get('answer', '')))
-        
-        # Keep only last 20 messages (10 exchanges) to avoid token limit
-        if len(self.chat_history) > 20:
-            self.chat_history = self.chat_history[-20:]
+        # Memory will be automatically loaded and saved inside RAGChain.chat()
+        response = self.retrieval_chain.chat(user_message)
         
         return response
     
     def clear_history(self):
         """Xóa lịch sử hội thoại."""
-        self.chat_history = []
-        print("🗑️  Đã xóa lịch sử hội thoại")
+        self.retrieval_chain.clear_memory()
 
 
 def interactive_chat():

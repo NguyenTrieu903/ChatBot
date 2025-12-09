@@ -5,6 +5,7 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
+from langchain.memory import ConversationBufferWindowMemory
 from dotenv import load_dotenv
 
 from .vector_store import VectorStore
@@ -17,11 +18,12 @@ load_dotenv()
 
 
 class RAGChain:
-    def __init__(self, use_case: str = "vietnamese_support"):
+    def __init__(self, use_case: str = "vietnamese_support", k: int = 1):
         """Initialize RAG chain.
         
         Args:
             use_case: Use case name
+            k: Number of conversation exchanges to keep in memory (default: 5)
         """
         self.use_case = use_case
         print(f"🔧 Initializing RAG chain for use case: {use_case}")
@@ -31,6 +33,16 @@ class RAGChain:
         self._initialize_vector_store()
         print("🔍 Initializing retriever...")
         self.retriever = self.vector_store.get_retriever(k=5, score_threshold=None)
+        
+        # Initialize ConversationBufferWindowMemory
+        # k=5 means keep last 5 conversation exchanges (10 messages: 5 user + 5 assistant)
+        print(f"💾 Initializing ConversationBufferWindowMemory (k={k})...")
+        self.memory = ConversationBufferWindowMemory(
+            memory_key="chat_history",
+            return_messages=True,
+            k=k  # Keep last k conversation exchanges
+        )
+        
         print("🔗 Creating RAG chain...")
         self.chain = self._create_rag_chain()
         self._log_index_stats()
@@ -101,11 +113,12 @@ class RAGChain:
         
         # Build RAG chain using LCEL
         # The retriever automatically handles query embedding with PineconeEmbeddings
+        # Memory will be loaded and saved in chat() method
         rag_chain = (
             {
                 "context": itemgetter("question") | self.retriever | RunnableLambda(format_docs),
                 "question": itemgetter("question"),
-                "chat_history": itemgetter("chat_history")  # Pass chat history to prompt
+                "chat_history": itemgetter("chat_history")  # Load from memory
             }
             | self.prompt
             | self.llm
@@ -175,28 +188,44 @@ class RAGChain:
         question: str,
         chat_history: Optional[List[BaseMessage]] = None
     ) -> Dict[str, Any]:
-        """Chat with the bot using RAG.
+        """Chat with the bot using RAG with ConversationBufferWindowMemory.
         
         Args:
             question: User question
-            chat_history: Previous messages (optional)
+            chat_history: Previous messages (optional, will use memory if not provided)
             
         Returns:
             Response dictionary with answer and metadata
         """
         try:
+            # Load chat history from memory if not provided
+            if chat_history is None:
+                # Get chat history from memory
+                memory_variables = self.memory.load_memory_variables({})
+                chat_history = memory_variables.get("chat_history", [])
+            else:
+                # Use provided chat history (for backward compatibility)
+                pass
+            
             # Prepare input for RAG chain
             chain_input = {
                 "question": question,
-                "chat_history": chat_history or []
+                "chat_history": chat_history
             }
             
             # Generate response using RAG chain
             # The chain will:
             # 1. Retrieve documents using retriever (with PineconeEmbeddings)
             # 2. Format documents into context
-            # 3. Pass to LLM with prompt
+            # 3. Pass to LLM with prompt (including chat history)
             response = self.chain.invoke(chain_input)
+            
+            # Save conversation to memory
+            # Memory will automatically keep only last k exchanges
+            self.memory.save_context(
+                {"input": question},
+                {"output": response}
+            )
             
             return {
                 "answer": response,
@@ -212,6 +241,11 @@ class RAGChain:
                 "sources": [],
                 "error": str(e)
             }
+    
+    def clear_memory(self):
+        """Clear conversation memory."""
+        self.memory.clear()
+        print("🗑️  Đã xóa lịch sử hội thoại")
 
 
 # Backward compatibility alias
