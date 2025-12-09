@@ -46,25 +46,26 @@ class VietnameseChatbot:
         print("💾 Sử dụng LangChain native chat history (best practice)")
     
     def chat(self, user_message: str) -> dict:
-        """Trò chuyện với chatbot.
+        """Chat with user and update chat history.
         
         Args:
-            user_message: Câu hỏi của người dùng
+            user_message: User's message
             
         Returns:
-            dict: Response với answer, sources, và documents
+            Response dictionary with answer
         """
-        # Get response với chat history (LangChain tự quản lý context)
+        # Add user message to history
+        from langchain_core.messages import HumanMessage, AIMessage
+        
+        # Get response from RAG chain
         response = self.retrieval_chain.chat(user_message, self.chat_history)
         
-        # Update chat history theo LangChain format
-        # (theo Real Python tutorial pattern)
+        # Update chat history with user message and bot response
         self.chat_history.append(HumanMessage(content=user_message))
         self.chat_history.append(AIMessage(content=response.get('answer', '')))
         
-        # Giữ chỉ 10 tin nhắn gần nhất để tránh token limit
-        # (LangChain best practice - sliding window)
-        if len(self.chat_history) > 20:  # 10 exchanges (user + assistant)
+        # Keep only last 20 messages (10 exchanges) to avoid token limit
+        if len(self.chat_history) > 20:
             self.chat_history = self.chat_history[-20:]
         
         return response
@@ -111,15 +112,7 @@ def interactive_chat():
                 print("\n🤖 Bot: ", end="", flush=True)
                 response = chatbot.chat(user_input)
                 print(response['answer'])
-                
-                # Show sources if available
-                if response.get('sources'):
-                    print(f"\n📚 Nguồn: {', '.join(response['sources'][:2])}")
-                
-                # Show method
-                method = response.get('method', '')
-                if method == 'rag':
-                    doc_count = len(response.get('retrieved_documents', []))
+ 
                 
             except KeyboardInterrupt:
                 print("\n\n👋 Tạm biệt!")

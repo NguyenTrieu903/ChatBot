@@ -50,8 +50,15 @@ def json_to_documents(json_data: List[Dict[str, Any]]) -> List[Document]:
         name = item.get('name', 'Unknown')
         metadata_text = item.get('metadata', '')
         
-        # Create document content
-        content = f"Sản phẩm: {name}\n\n{metadata_text}"
+        # Create document content with better structure for search
+        # Include product name multiple times to improve matching
+        # Format: Product name + synonyms + full metadata
+        content = f"""Tên sản phẩm: {name}
+Sản phẩm: {name}
+
+{metadata_text}
+
+Thông tin về {name}: {metadata_text}"""
         
         # Create LangChain Document
         doc = Document(

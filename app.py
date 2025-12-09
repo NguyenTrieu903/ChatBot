@@ -144,53 +144,28 @@ def main():
                 with st.spinner("Đang suy nghĩ..."):
                     try:
                         response = st.session_state.chatbot.chat(prompt)
+                        answer = response.get('answer', '')
                         
                         # Display response
-                        st.write(response['answer'])
+                        st.write(answer)
                         
-                        # Show method (removed sources display)
-                        method = response.get('method', '')
-                        doc_count = len(response.get('retrieved_documents', []))
-                        
-                        if method == 'direct':
-                            st.caption("💡 Sử dụng kiến thức chung")
-                        
-                        # Show prompt debug
-                        # if response.get('prompt_debug'):
-                        #     with st.expander("🔍 Xem Prompt chi tiết"):
-                        #         prompt_info = response['prompt_debug']
-                                
-                        #         st.markdown("**📝 System Prompt:**")
-                        #         st.code(prompt_info.get('system', ''), language='text')
-                                
-                        #         if prompt_info.get('context'):
-                        #             st.markdown("**📚 Context từ Database:**")
-                        #             st.code(prompt_info.get('context', ''), language='text')
-                                
-                        #         if prompt_info.get('history'):
-                        #             st.markdown("**💬 Lịch sử hội thoại:**")
-                        #             st.code(prompt_info.get('history', ''), language='text')
-                                
-                        #         st.markdown("**👤 Câu hỏi:**")
-                        #         st.code(prompt_info.get('question', ''), language='text')
-                        
-                        # Add to history
+                        # Add assistant message to session state
                         st.session_state.messages.append({
                             "role": "assistant",
-                            "content": response['answer'],
-                            "sources": response.get('sources', []),
-                            "method": method,
-                            "doc_count": doc_count,
+                            "content": answer,
                             "timestamp": datetime.now().isoformat(),
-                            "prompt_debug": response.get('prompt_debug', {})
+                            "method": response.get('method', 'rag')
                         })
                         
                     except Exception as e:
-                        st.error(f"❌ Lỗi: {str(e)}")
+                        error_msg = f"Xin lỗi, đã xảy ra lỗi: {str(e)}"
+                        st.error(error_msg)
+                        # Add error message to session state
                         st.session_state.messages.append({
                             "role": "assistant",
-                            "content": f"Xin lỗi, đã xảy ra lỗi: {str(e)}",
-                            "timestamp": datetime.now().isoformat()
+                            "content": error_msg,
+                            "timestamp": datetime.now().isoformat(),
+                            "error": True
                         })
 
 
