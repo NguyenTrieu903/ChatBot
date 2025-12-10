@@ -157,7 +157,7 @@ Lưu ý:
         """
         if self.retriever is None:
             raise RetrievalError("Retriever not initialized")
-        
+        print(self.prompt)
         rag_chain = (
             {
                 "context": itemgetter("question") | self.retriever | RunnableLambda(format_docs),
@@ -250,6 +250,24 @@ Lưu ý:
                 "question": question,
                 "chat_history": chat_history
             }
+            
+            # Lấy context từ retriever để in prompt đầy đủ
+            context = format_docs(self.retriever.invoke(question))
+            
+            # Format và in prompt
+            prompt_messages = self.prompt.format_messages(
+                context=context,
+                question=question,
+                chat_history=chat_history
+            )
+            
+            print("\n" + "="*70)
+            print("📝 PROMPT GỬI ĐẾN LLM:")
+            print("="*70)
+            for msg in prompt_messages:
+                print(f"\n[{msg.__class__.__name__}]:")
+                print(msg.content)
+            print("="*70 + "\n")
             
             # Generate response
             response = self.chain.invoke(chain_input)

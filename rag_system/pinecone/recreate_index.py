@@ -6,7 +6,10 @@ Use this if you've updated the document format in data_loader.py
 import os
 import sys
 from dotenv import load_dotenv
+from pathlib import Path
 
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 load_dotenv()
 
 print("\n" + "="*70)
