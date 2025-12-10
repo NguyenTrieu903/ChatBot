@@ -10,12 +10,7 @@ load_dotenv()
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
-JSON_DATA_FILE = DATA_DIR / "traning.json"  # [AGENT: OLD CODE] - Giữ lại để tương thích ngược
-# Excel data files
-EXCEL_DATA_FILES = [
-    DATA_DIR / "traning.xlsx",
-    DATA_DIR / "traning_new.xlsx"
-]
+JSON_DATA_FILE = DATA_DIR / "traning.json"
 
 # API Keys
 GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")

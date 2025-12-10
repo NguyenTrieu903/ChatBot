@@ -23,7 +23,7 @@ from .core.config import (
     MEMORY_WINDOW_SIZE,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
-    EXCEL_DATA_FILES,
+    JSON_DATA_FILE,
     DEFAULT_USE_CASE,
     validate_config
 )
@@ -31,7 +31,7 @@ from .core.logger import get_logger
 from .core.exceptions import ConfigurationError, RetrievalError, LLMError
 from .pinecone.vector_store import VectorStore
 from .utils.common import format_docs
-from loaders.data_loader import load_multiple_excel_files
+from loaders.data_loader import load_and_chunk_json
 
 logger = get_logger(__name__)
 
@@ -172,9 +172,9 @@ Lưu ý:
         return rag_chain
     
     def _initialize_vector_store(self) -> None:
-        """Initialize vector store with data from Excel files.
+        """Initialize vector store with data from JSON file.
         
-        Flow: Excel Data → Extract product answers → Chunking → PineconeEmbeddings → Pinecone Index
+        Flow: JSON Data → Chunking → PineconeEmbeddings → Pinecone Index
         """
         if self.vector_store.index_exists():
             try:
@@ -196,25 +196,19 @@ Lưu ý:
         # Create new index
         logger.info(f"Creating Pinecone index for {self.use_case}...")
         
-        # Kiểm tra các file Excel có tồn tại không
-        missing_files = [f for f in EXCEL_DATA_FILES if not f.exists()]
-        if missing_files:
-            raise ConfigurationError(
-                f"Excel data files not found: {[str(f) for f in missing_files]}"
-            )
+        if not JSON_DATA_FILE.exists():
+            raise ConfigurationError(f"Data file not found: {JSON_DATA_FILE}")
         
-        # Load và chunk dữ liệu từ các file Excel
-        logger.info(f"Loading data from {len(EXCEL_DATA_FILES)} Excel files...")
-        chunked_docs = load_multiple_excel_files(
-            excel_files=[str(f) for f in EXCEL_DATA_FILES],
+        chunked_docs = load_and_chunk_json(
+            str(JSON_DATA_FILE),
             chunk_size=CHUNK_SIZE,
             chunk_overlap=CHUNK_OVERLAP
         )
         
         if not chunked_docs:
-            raise ConfigurationError("No documents loaded from Excel files")
+            raise ConfigurationError("No documents loaded from JSON file")
         
-        logger.info(f"Loaded {len(chunked_docs)} chunks from Excel files")
+        logger.info(f"Loaded {len(chunked_docs)} chunks from JSON")
         logger.info("Uploading chunks to Pinecone...")
         
         self.vector_store.create_index(chunked_docs)
