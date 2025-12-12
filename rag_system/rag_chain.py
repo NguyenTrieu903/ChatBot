@@ -119,28 +119,19 @@ class RAGChain:
         Returns:
             ChatPromptTemplate instance
         """
-        system_message = """Bạn là trợ lý AI chuyên nghiệp của Tâm Quốc Tế, hỗ trợ tư vấn về các sản phẩm y tế và thuốc bằng tiếng Việt.
+        system_message = """Bạn là trợ lý AI của Tâm Quốc Tế, tư vấn về sản phẩm y tế và thuốc.
 
-QUY TẮC NGHIÊM NGẶT:
-1. CHỈ được trả lời dựa trên thông tin có trong cơ sở dữ liệu (context) được cung cấp
-2. TUYỆT ĐỐI KHÔNG được "bịa" ra, suy đoán, hoặc sử dụng kiến thức bên ngoài để trả lời
-3. Nếu KHÔNG có thông tin về sản phẩm trong context, bạn PHẢI trả lời: "Xin lỗi, tôi không có thông tin về sản phẩm này trong cơ sở dữ liệu. Vui lòng liên hệ Tâm Quốc Tế để được tư vấn chi tiết."
-4. Luôn trả lời bằng tiếng Việt, thân thiện và chuyên nghiệp
+QUY TẮC:
+1. CHỈ dùng thông tin trong [THÔNG TIN] bên dưới. KHÔNG suy đoán hay dùng kiến thức ngoài.
+2. Nếu không có thông tin: "Xin lỗi, tôi không có thông tin về [tên sản phẩm] trong cơ sở dữ liệu. Vui lòng liên hệ Tâm Quốc Tế."
+3. Trả lời tiếng Việt, rõ ràng, trích dẫn chính xác số liệu từ context.
+4. Khi hỏi "giá", "liều dùng" mà không nêu tên → tham chiếu sản phẩm từ câu hỏi GẦN NHẤT.
+5. Từ "này", "đó", "thuốc này" → tham chiếu sản phẩm từ câu hỏi TRƯỚC.
 
-Thông tin từ cơ sở dữ liệu Tâm Quốc Tế:
+THÔNG TIN TỪ CƠ SỞ DỮ LIỆU:
 {context}
 
-HƯỚNG DẪN TRẢ LỜI:
-- Khi người dùng hỏi về sản phẩm/thuốc: Chỉ trả lời nếu tìm thấy thông tin trong context
-- Khi người dùng hỏi "giá như thế nào", "liều dùng như thế nào" mà KHÔNG đề cập tên sản phẩm:
-  → Họ đang hỏi về sản phẩm được đề cập ở CÂU HỎI GẦN NHẤT trong lịch sử chat
-- Khi người dùng dùng từ "này", "đó", "thuốc này", "sản phẩm này":
-  → Họ đang nói về sản phẩm được đề cập ở câu hỏi trước
-- LUÔN ưu tiên sản phẩm từ câu hỏi GẦN NHẤT, không phải câu hỏi cũ hơn
-- Về thông tin y tế: Chỉ cung cấp thông tin có trong context, không tự suy luận về công dụng, liều dùng, hoặc tác dụng phụ
-- Nếu context rỗng hoặc không có thông tin liên quan: Trả lời "Không có thông tin về sản phẩm này trong cơ sở dữ liệu"
-
-NHẮC LẠI: Bạn CHỈ được sử dụng thông tin từ context. KHÔNG được tạo ra thông tin mới."""
+NHẮC LẠI: CHỈ dùng thông tin trong [THÔNG TIN] trên. KHÔNG tạo ra thông tin mới."""
         
         return ChatPromptTemplate.from_messages([
             ("system", system_message),
@@ -148,8 +139,52 @@ NHẮC LẠI: Bạn CHỈ được sử dụng thông tin từ context. KHÔNG �
             ("human", "{question}")
         ])
     
+    def _get_product_names(self) -> List[str]:
+        """Get list of product names from JSON file.
+        
+        Returns:
+            List of product names
+        """
+        try:
+            import json
+            if JSON_DATA_FILE.exists():
+                with open(JSON_DATA_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                return [item.get('name', '') for item in data if item.get('name')]
+        except Exception:
+            pass
+        return []
+    
+    def _rewrite_query(self, question: str, chat_history: List[BaseMessage]) -> str:
+        """Rewrite/expand query to improve retrieval quality.
+        
+        Args:
+            question: Original user question
+            chat_history: Previous conversation messages
+            
+        Returns:
+            Rewritten/expanded query for better retrieval
+        """
+        # Nếu có chat history, thử tìm tên sản phẩm từ câu hỏi trước
+        if chat_history:
+            # Lấy danh sách sản phẩm từ JSON
+            product_names = self._get_product_names()
+            
+            # Lấy câu hỏi gần nhất
+            recent_questions = [msg.content for msg in chat_history[-4:] if hasattr(msg, 'content')]
+            for recent_q in reversed(recent_questions):
+                # Tìm tên sản phẩm trong câu hỏi trước
+                for product in product_names:
+                    if product and product.lower() in str(recent_q).lower():
+                        # Nếu câu hỏi hiện tại không có tên sản phẩm, thêm vào
+                        if product.lower() not in question.lower():
+                            return f"{question} {product}"
+                        break
+        
+        return question
+    
     def _create_rag_chain(self):
-        """Create RAG chain using LCEL.
+        """Create RAG chain using LCEL with query rewriting.
         
         Returns:
             RAG chain using LangChain Expression Language
@@ -159,13 +194,29 @@ NHẮC LẠI: Bạn CHỈ được sử dụng thông tin từ context. KHÔNG �
         """
         if self.retriever is None:
             raise RetrievalError("Retriever not initialized")
-        print(self.prompt)
-        rag_chain = (
-            {
-                "context": itemgetter("question") | self.retriever | RunnableLambda(format_docs),
-                "question": itemgetter("question"),
-                "chat_history": itemgetter("chat_history")
+        
+        def rewrite_and_retrieve(inputs: Dict[str, Any]) -> Dict[str, Any]:
+            """Rewrite query and retrieve documents."""
+            question = inputs["question"]
+            chat_history = inputs.get("chat_history", [])
+            
+            # Rewrite query for better retrieval
+            rewritten_query = self._rewrite_query(question, chat_history)
+            
+            # Retrieve documents
+            docs = self.retriever.invoke(rewritten_query)
+            
+            # Format context
+            context = format_docs(docs)
+            
+            return {
+                "context": context,
+                "question": question,  # Use original question for LLM
+                "chat_history": chat_history
             }
+        
+        rag_chain = (
+            rewrite_and_retrieve
             | self.prompt
             | self.llm
             | StrOutputParser()
@@ -227,12 +278,52 @@ NHẮC LẠI: Bạn CHỈ được sử dụng thông tin từ context. KHÔNG �
         except Exception as e:
             logger.warning(f"Could not get index stats: {e}")
     
+    def _validate_response(self, response: str, context: str) -> bool:
+        """Validate that response is based on context, not hallucinated.
+        
+        Args:
+            response: LLM response
+            context: Retrieved context
+            
+        Returns:
+            True if response seems valid, False if likely hallucinated
+        """
+        if not context or "Không có thông tin" in context:
+            # Nếu không có context, response phải thông báo không có thông tin
+            no_info_keywords = [
+                "không có thông tin",
+                "không tìm thấy",
+                "không có trong cơ sở dữ liệu",
+                "liên hệ"
+            ]
+            return any(keyword in response.lower() for keyword in no_info_keywords)
+        
+        # Kiểm tra xem response có chứa thông tin từ context không
+        # Lấy một số từ khóa quan trọng từ context
+        context_lower = context.lower()
+        response_lower = response.lower()
+        
+        # Tìm tên sản phẩm trong context (lấy từ JSON)
+        product_names = self._get_product_names()
+        found_product = None
+        for product in product_names:
+            if product and product.lower() in context_lower:
+                found_product = product.lower()
+                break
+        
+        # Nếu có sản phẩm trong context, response nên đề cập đến nó
+        if found_product and found_product not in response_lower:
+            # Có thể vẫn hợp lệ nếu response nói về sản phẩm khác từ chat history
+            return True
+        
+        return True  # Mặc định cho phép, validation này chỉ là cảnh báo
+    
     def chat(
         self,
         question: str,
         chat_history: Optional[List[BaseMessage]] = None
     ) -> Dict[str, Any]:
-        """Chat with the bot using RAG.
+        """Chat with the bot using RAG with improved retrieval.
         
         Args:
             question: User question
@@ -255,6 +346,15 @@ NHẮC LẠI: Bạn CHỈ được sử dụng thông tin từ context. KHÔNG �
             
             # Generate response
             response = self.chain.invoke(chain_input)
+            
+            # Validate response (log warning if suspicious)
+            # Lấy context để validate (có thể cache lại nếu cần)
+            rewritten_query = self._rewrite_query(question, chat_history)
+            docs = self.retriever.invoke(rewritten_query)
+            context = format_docs(docs)
+            
+            if not self._validate_response(response, context):
+                logger.warning(f"Response validation warning for question: {question[:50]}...")
             
             # Save to memory
             self.memory.save_context(

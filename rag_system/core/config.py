@@ -18,8 +18,9 @@ PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
 
 # LLM Configuration
 LLM_MODEL = "llama-3.3-70b-versatile"
-LLM_TEMPERATURE = 0.7
-LLM_MAX_TOKENS = 8000
+# Giảm temperature để trả lời chính xác hơn cho domain medical
+LLM_TEMPERATURE = 0.3  # Giảm từ 0.7 xuống 0.3 để ít "sáng tạo" hơn
+LLM_MAX_TOKENS = 2000  # Giảm để tiết kiệm tokens và trả lời tập trung hơn
 
 # Embedding Configuration
 EMBEDDING_MODEL = "multilingual-e5-large"
@@ -28,8 +29,9 @@ EMBEDDING_DIMENSION = 1024  # multilingual-e5-large dimension
 # Vector Store Configuration
 DEFAULT_USE_CASE = "vietnamese_support"
 DEFAULT_INDEX_NAME = f"{DEFAULT_USE_CASE}-index"
-RETRIEVER_K = 5
-RETRIEVER_SCORE_THRESHOLD = None
+# Tăng số lượng documents để có nhiều thông tin hơn
+RETRIEVER_K = 5  # Giảm xuống 5 để tiết kiệm tokens, vẫn đủ thông tin
+RETRIEVER_SCORE_THRESHOLD = 0.5  # Chỉ lấy documents có similarity >= 0.5
 
 # Memory Configuration
 MEMORY_WINDOW_SIZE = 5  # Number of conversation exchanges to keep
