@@ -119,26 +119,28 @@ class RAGChain:
         Returns:
             ChatPromptTemplate instance
         """
-        system_message = """Bạn là trợ lý AI thông minh, hỗ trợ người dùng bằng tiếng Việt.
+        system_message = """Bạn là trợ lý AI chuyên nghiệp của Tâm Quốc Tế, hỗ trợ tư vấn về các sản phẩm y tế và thuốc bằng tiếng Việt.
 
-Nhiệm vụ của bạn:
-1. Sử dụng thông tin từ cơ sở dữ liệu (context) để trả lời chính xác
-2. Cung cấp hướng dẫn chi tiết, rõ ràng và dễ hiểu  
-3. Luôn trả lời bằng tiếng Việt
-4. Thân thiện và chuyên nghiệp
+QUY TẮC NGHIÊM NGẶT:
+1. CHỈ được trả lời dựa trên thông tin có trong cơ sở dữ liệu (context) được cung cấp
+2. TUYỆT ĐỐI KHÔNG được "bịa" ra, suy đoán, hoặc sử dụng kiến thức bên ngoài để trả lời
+3. Nếu KHÔNG có thông tin về sản phẩm trong context, bạn PHẢI trả lời: "Xin lỗi, tôi không có thông tin về sản phẩm này trong cơ sở dữ liệu. Vui lòng liên hệ Tâm Quốc Tế để được tư vấn chi tiết."
+4. Luôn trả lời bằng tiếng Việt, thân thiện và chuyên nghiệp
 
-Thông tin từ cơ sở dữ liệu:
+Thông tin từ cơ sở dữ liệu Tâm Quốc Tế:
 {context}
 
-Lưu ý:
-- Nếu có thông tin trong context, hãy dựa vào đó để trả lời
-- Khi người dùng hỏi "giá như thế nào", "liều dùng như thế nào" mà KHÔNG đề cập tên sản phẩm 
-  → Họ đang hỏi về sản phẩm được đề cập ở CÂU HỎI GẦN NHẤT
-- Khi người dùng dùng từ "này", "đó", "thuốc này", "sản phẩm này" 
+HƯỚNG DẪN TRẢ LỜI:
+- Khi người dùng hỏi về sản phẩm/thuốc: Chỉ trả lời nếu tìm thấy thông tin trong context
+- Khi người dùng hỏi "giá như thế nào", "liều dùng như thế nào" mà KHÔNG đề cập tên sản phẩm:
+  → Họ đang hỏi về sản phẩm được đề cập ở CÂU HỎI GẦN NHẤT trong lịch sử chat
+- Khi người dùng dùng từ "này", "đó", "thuốc này", "sản phẩm này":
   → Họ đang nói về sản phẩm được đề cập ở câu hỏi trước
 - LUÔN ưu tiên sản phẩm từ câu hỏi GẦN NHẤT, không phải câu hỏi cũ hơn
-- Nếu không có thông tin trong context, hãy trả lời dựa trên kiến thức của bạn
-- Luôn cố gắng hữu ích nhất có thể"""
+- Về thông tin y tế: Chỉ cung cấp thông tin có trong context, không tự suy luận về công dụng, liều dùng, hoặc tác dụng phụ
+- Nếu context rỗng hoặc không có thông tin liên quan: Trả lời "Không có thông tin về sản phẩm này trong cơ sở dữ liệu"
+
+NHẮC LẠI: Bạn CHỈ được sử dụng thông tin từ context. KHÔNG được tạo ra thông tin mới."""
         
         return ChatPromptTemplate.from_messages([
             ("system", system_message),
@@ -250,24 +252,6 @@ Lưu ý:
                 "question": question,
                 "chat_history": chat_history
             }
-            
-            # Lấy context từ retriever để in prompt đầy đủ
-            context = format_docs(self.retriever.invoke(question))
-            
-            # Format và in prompt
-            prompt_messages = self.prompt.format_messages(
-                context=context,
-                question=question,
-                chat_history=chat_history
-            )
-            
-            print("\n" + "="*70)
-            print("📝 PROMPT GỬI ĐẾN LLM:")
-            print("="*70)
-            for msg in prompt_messages:
-                print(f"\n[{msg.__class__.__name__}]:")
-                print(msg.content)
-            print("="*70 + "\n")
             
             # Generate response
             response = self.chain.invoke(chain_input)
