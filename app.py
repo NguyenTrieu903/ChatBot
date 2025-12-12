@@ -19,8 +19,8 @@ from main import ChatBot
 
 # Page config
 st.set_page_config(
-    page_title="Chatbot AI Tiếng Việt",
-    page_icon="🇻🇳",
+    page_title="ChatBot AI Tâm Quốc Tế",
+    page_icon="💊",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
@@ -49,12 +49,32 @@ st.markdown("""
     
     /* Header */
     .header-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
         padding: 2rem;
         border-radius: 10px;
         color: white;
         text-align: center;
         margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .header-container h1 {
+        margin: 0;
+        font-size: 2.5rem;
+        font-weight: 700;
+    }
+    
+    .header-container p {
+        margin: 0.5rem 0 0 0;
+        font-size: 1.1rem;
+        opacity: 0.9;
+    }
+    
+    .brand-name {
+        font-size: 1.3rem;
+        font-weight: 600;
+        margin-top: 0.5rem;
+        color: #fff;
     }
     
     /* Buttons */
@@ -123,8 +143,9 @@ def main():
     # Header
     st.markdown("""
     <div class="header-container">
-        <h1>🇻🇳 Chatbot AI Tiếng Việt</h1>
-        <p>Powered by Groq AI & Local Embeddings</p>
+        <h1>💊 ChatBot AI Tâm Quốc Tế</h1>
+        <p>Trợ lý AI chuyên tư vấn về sản phẩm y tế và thuốc</p>
+        <div class="brand-name">Tâm Quốc Tế - Chăm sóc sức khỏe của bạn</div>
     </div>
     """, unsafe_allow_html=True)
     

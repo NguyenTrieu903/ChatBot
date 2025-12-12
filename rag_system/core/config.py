@@ -17,7 +17,7 @@ GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
 PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
 
 # LLM Configuration
-LLM_MODEL = "llama-3.3-70b-versatile"
+LLM_MODEL = "llama-3.1-8b-instant"
 # Giảm temperature để trả lời chính xác hơn cho domain medical
 LLM_TEMPERATURE = 0.3  # Giảm từ 0.7 xuống 0.3 để ít "sáng tạo" hơn
 LLM_MAX_TOKENS = 2000  # Giảm để tiết kiệm tokens và trả lời tập trung hơn
