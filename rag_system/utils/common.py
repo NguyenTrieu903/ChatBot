@@ -31,8 +31,14 @@ def format_docs(docs: List[Document]) -> str:
             content = content[:max_length] + "\n... (nội dung đã rút gọn)"
         
         # Format với cấu trúc rõ ràng hơn
+        chunk_info = ""
+        if 'chunk_index' in metadata and 'total_chunks' in metadata:
+            chunk_index = metadata.get('chunk_index', 0)
+            total_chunks = metadata.get('total_chunks', 1)
+            chunk_info = f" (Chunk {chunk_index + 1}/{total_chunks})"
+        
         context_parts.append(
-            f"[THÔNG TIN {i}] Sản phẩm: {product_name}\n"
+            f"[THÔNG TIN {i}] Sản phẩm: {product_name}{chunk_info}\n"
             f"Nguồn: {source}\n"
             f"Nội dung:\n{content}"
         )

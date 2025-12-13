@@ -79,41 +79,73 @@ Thông tin về {name}: {metadata_text}"""
 
 def chunk_documents(
     documents: List[Document],
-    chunk_size: int = 1000,
+    chunk_size: int = 900,
     chunk_overlap: int = 200
 ) -> List[Document]:
     """Split documents into chunks using RecursiveCharacterTextSplitter.
     
+    Optimized for Vietnamese product information with meaningful boundaries.
+    Preserves product metadata in each chunk.
+    
     Args:
         documents: List of LangChain Documents
-        chunk_size: Maximum size of each chunk
-        chunk_overlap: Overlap between chunks
+        chunk_size: Maximum size of each chunk (default: 900 for optimal semantic search)
+        chunk_overlap: Overlap between chunks to prevent information loss
         
     Returns:
-        List of chunked Documents
+        List of chunked Documents with preserved metadata
     """
     print(f"✂️  Đang chunking {len(documents)} documents...")
     print(f"   Chunk size: {chunk_size}, Overlap: {chunk_overlap}")
     
-    # Initialize text splitter
+    # Initialize text splitter with Vietnamese-friendly separators
+    # Priority: paragraphs → sentences → phrases → words
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         length_function=len,
-        separators=["\n\n", "\n", ". ", " ", ""]  # Vietnamese-friendly separators
+        separators=[
+            "\n\n",      # Paragraph breaks (highest priority)
+            "\n",        # Line breaks
+            ". ",        # Sentence endings
+            "。",        # Vietnamese sentence marker
+            "，",        # Comma
+            " ",         # Spaces
+            ""           # Character level (last resort)
+        ]
     )
     
-    # Split documents
-    chunks = text_splitter.split_documents(documents)
+    # Split documents and preserve metadata
+    all_chunks = []
+    for doc in documents:
+        chunks = text_splitter.split_documents([doc])
+        
+        # Enhance each chunk with metadata
+        for i, chunk in enumerate(chunks):
+            # Preserve original metadata
+            if doc.metadata:
+                chunk.metadata.update(doc.metadata)
+            
+            # Add chunk-specific metadata
+            chunk.metadata['chunk_index'] = i
+            chunk.metadata['total_chunks'] = len(chunks)
+            
+            # Ensure product_name is always present
+            if 'product_name' not in chunk.metadata:
+                chunk.metadata['product_name'] = doc.metadata.get('product_name', 'Unknown')
+            
+            all_chunks.append(chunk)
     
-    print(f"✅ Đã tạo {len(chunks)} chunks từ {len(documents)} documents")
+    avg_chunks_per_doc = len(all_chunks) / len(documents) if documents else 0
+    print(f"✅ Đã tạo {len(all_chunks)} chunks từ {len(documents)} documents")
+    print(f"   Trung bình: {avg_chunks_per_doc:.1f} chunks/document")
     
-    return chunks
+    return all_chunks
 
 
 def load_and_chunk_json(
     json_file: str,
-    chunk_size: int = 1000,
+    chunk_size: int = 900,
     chunk_overlap: int = 200
 ) -> List[Document]:
     """Complete pipeline: Load JSON → Convert to Documents → Chunk.
@@ -136,4 +168,26 @@ def load_and_chunk_json(
     chunks = chunk_documents(documents, chunk_size, chunk_overlap)
     
     return chunks
+
+
+def load_json_without_chunking(json_file: str) -> List[Document]:
+    """Load JSON and convert to Documents WITHOUT chunking.
+    
+    Each product in JSON becomes one Document (one vector in Pinecone).
+    
+    Args:
+        json_file: Path to JSON file
+        
+    Returns:
+        List of Documents (one per product), ready for embedding
+    """
+    # Step 1: Load JSON
+    json_data = load_json_data(json_file)
+    
+    # Step 2: Convert to Documents (NO chunking)
+    documents = json_to_documents(json_data)
+    
+    print(f"✅ Đã tạo {len(documents)} documents (không chunk) - mỗi sản phẩm = 1 document")
+    
+    return documents
 

@@ -4,6 +4,8 @@ Uses PineconeEmbeddings and PineconeVectorStore from langchain-pinecone.
 """
 
 import time
+import re
+import unicodedata
 from typing import List, Dict, Any, Optional
 
 # Workaround for Pinecone deprecated plugin error
@@ -151,9 +153,12 @@ class VectorStore:
         """
         if self.vectorstore is None:
             index = self._get_index()
+            # text_key='text' tells PineconeVectorStore where to find the text content in metadata
+            # This is needed when we upload documents directly via Pinecone API
             self.vectorstore = PineconeVectorStore(
                 index=index,
-                embedding=self.embeddings
+                embedding=self.embeddings,
+                text_key='text'  # Key in metadata that contains the page_content
             )
         return self.vectorstore
     
@@ -204,15 +209,85 @@ class VectorStore:
             stats = index.describe_index_stats()
             existing_vectors = stats.get('total_vector_count', 0)
             
+            # If index has existing vectors, delete all first (to ensure clean state)
             if existing_vectors > 0:
-                logger.info(f"Connecting to existing index with {existing_vectors} vectors")
-                logger.info(f"Adding {len(docs)} new documents...")
-                vectorstore.add_documents(docs)
-                logger.info(f"Successfully added {len(docs)} documents")
-            else:
-                logger.info(f"Creating new index with {len(docs)} documents...")
-                vectorstore.add_documents(docs)
-                logger.info(f"Successfully created index with {len(docs)} documents")
+                logger.warning(f"Index has {existing_vectors} existing vectors. Deleting all vectors first...")
+                try:
+                    # Delete all vectors using delete_all
+                    index.delete(delete_all=True)
+                    logger.info("Deleted all existing vectors")
+                    # Wait for deletion to complete
+                    time.sleep(2)
+                except Exception as e:
+                    logger.warning(f"Could not delete existing vectors: {e}")
+            
+            # Upload documents directly using Pinecone API to ensure 1 doc = 1 vector
+            logger.info(f"Adding {len(docs)} documents to index (direct upload)...")
+            
+            # Generate embeddings for all documents
+            texts = [doc.page_content for doc in docs]
+            logger.info(f"Generating embeddings for {len(texts)} texts...")
+            embeddings_list = self.embeddings.embed_documents(texts)
+            
+            # Prepare vectors for upload
+            vectors_to_upload = []
+            for i, (doc, embedding) in enumerate(zip(docs, embeddings_list)):
+                # Create unique ID for each chunk/document (ASCII only for Pinecone)
+                product_name = doc.metadata.get('product_name', 'unknown')
+                chunk_index = doc.metadata.get('chunk_index', 0)
+                
+                # Convert product name to ASCII-safe string
+                # Normalize Unicode characters (convert to closest ASCII equivalent)
+                normalized = unicodedata.normalize('NFKD', product_name)
+                # Remove non-ASCII characters and diacritics
+                ascii_name = normalized.encode('ascii', 'ignore').decode('ascii')
+                # Clean up: lowercase, replace spaces/special chars with underscore
+                ascii_name = re.sub(r'[^a-z0-9_]+', '_', ascii_name.lower())
+                # Remove multiple underscores and trim
+                ascii_name = re.sub(r'_+', '_', ascii_name).strip('_')
+                
+                # Fallback if name becomes empty
+                if not ascii_name:
+                    ascii_name = f"product_{i}"
+                
+                # Use simple format: product_chunk_index_docindex
+                vector_id = f"{ascii_name}_chunk_{chunk_index}_{i}"
+                
+                # Prepare metadata (Pinecone only accepts certain types)
+                # IMPORTANT: Store page_content in metadata so we can retrieve it later
+                metadata = {}
+                
+                # Add page_content to metadata (Pinecone metadata can store strings up to ~40KB)
+                if doc.page_content:
+                    metadata['text'] = doc.page_content  # PineconeVectorStore uses 'text' key
+                
+                # Add other metadata
+                for key, value in doc.metadata.items():
+                    # Convert to string if needed, skip None values
+                    if value is not None:
+                        if isinstance(value, (str, int, float, bool)):
+                            metadata[key] = value
+                        else:
+                            metadata[key] = str(value)
+                
+                vectors_to_upload.append({
+                    "id": vector_id,
+                    "values": embedding,
+                    "metadata": metadata
+                })
+            
+            # Upload in batches to Pinecone
+            batch_size = 100  # Pinecone supports up to 100 vectors per upsert
+            for i in range(0, len(vectors_to_upload), batch_size):
+                batch = vectors_to_upload[i:i + batch_size]
+                index.upsert(vectors=batch)
+                logger.info(f"Uploaded batch {i//batch_size + 1}/{(len(vectors_to_upload)-1)//batch_size + 1}")
+            
+            logger.info(f"Successfully uploaded {len(docs)} documents as {len(vectors_to_upload)} vectors")
+            
+            # Refresh vectorstore to ensure it can query the new vectors
+            self.vectorstore = None
+            vectorstore = self._get_vectorstore()
             
         except Exception as e:
             error_msg = (

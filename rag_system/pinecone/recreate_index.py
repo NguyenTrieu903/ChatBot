@@ -24,6 +24,7 @@ if not os.getenv("PINECONE_API_KEY"):
 try:
     from rag_system.pinecone.vector_store import VectorStore
     from loaders.data_loader import load_and_chunk_json
+    from rag_system.core.config import CHUNK_SIZE, CHUNK_OVERLAP
     
     # Initialize vector store
     vector_store = VectorStore("vietnamese_support")
@@ -38,14 +39,19 @@ try:
             try:
                 vector_store.delete_index()
                 print("✅ Đã xóa index cũ")
+                print("⏳ Đợi 10 giây để Pinecone hoàn tất việc xóa index...")
+                import time
+                time.sleep(10)  # Đợi Pinecone xóa index hoàn toàn
+                print("✅ Sẵn sàng tạo index mới")
             except Exception as e:
                 print(f"⚠️  Lỗi khi xóa index: {e}")
                 print("💡 Bạn có thể xóa thủ công tại: https://app.pinecone.io/")
+                sys.exit(1)
         else:
             print("❌ Hủy bỏ. Index không được thay đổi.")
             sys.exit(0)
     
-    # Load and chunk JSON data
+    # Load JSON data WITHOUT chunking - each product = 1 document
     json_file = "data/traning.json"
     
     if not os.path.exists(json_file):
@@ -53,12 +59,13 @@ try:
         sys.exit(1)
     
     print(f"\n📄 Đang đọc dữ liệu từ {json_file}...")
-    print("✂️  Chunking documents (chunk_size=1000, overlap=200)...")
+    print(f"📦 Loading và chunking documents...")
+    print(f"   Chunk size: {CHUNK_SIZE}, Overlap: {CHUNK_OVERLAP}")
     
     chunked_documents = load_and_chunk_json(
         json_file,
-        chunk_size=1000,
-        chunk_overlap=200
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP
     )
     
     if not chunked_documents:
@@ -66,6 +73,18 @@ try:
         sys.exit(1)
     
     print(f"✅ Đã tạo {len(chunked_documents)} chunks từ JSON")
+    
+    # Verify chunk distribution by product
+    print(f"\n📋 Phân bố chunks theo sản phẩm:")
+    product_chunks = {}
+    for doc in chunked_documents:
+        product_name = doc.metadata.get('product_name', 'Unknown')
+        if product_name not in product_chunks:
+            product_chunks[product_name] = 0
+        product_chunks[product_name] += 1
+    
+    for product_name, count in product_chunks.items():
+        print(f"   • {product_name}: {count} chunks")
     
     # Create new index
     print(f"\n📤 Đang tạo Pinecone index '{vector_store.index_name}'...")
@@ -78,11 +97,13 @@ try:
     stats = vector_store.get_stats()
     print(f"\n📊 Index Statistics:")
     print(f"   Name: {stats.get('index_name', 'N/A')}")
-    print(f"   Vectors: {stats.get('total_vectors', 'N/A')}")
-    print(f"   Dimension: {stats.get('dimension', 384)}")
+    print(f"   Vectors: {stats.get('total_vectors', 'N/A')} (mong đợi: ~{len(chunked_documents)})")
+    print(f"   Dimension: {stats.get('dimension', 1024)}")
     
     print("\n" + "="*70)
-    print("🎉 HOÀN TẤT! Index đã được tạo lại với format mới.")
+    print("🎉 HOÀN TẤT! Index đã được tạo lại với chunking tối ưu.")
+    print(f"   Tổng: {len(chunked_documents)} chunks (vectors)")
+    print(f"   Mỗi chunk chứa ~{CHUNK_SIZE} ký tự với overlap {CHUNK_OVERLAP}")
     print("="*70)
     print("\n💡 Bây giờ bạn có thể chạy chatbot:")
     print("   python main.py")

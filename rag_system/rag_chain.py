@@ -7,6 +7,7 @@ using Pinecone for vector storage and Groq AI for LLM inference.
 from typing import List, Dict, Any, Optional
 
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
@@ -93,45 +94,81 @@ class RAGChain:
         self.chain = self._create_rag_chain()
         self._log_index_stats()
     
-    def _initialize_llm(self) -> ChatGroq:
-        """Initialize Groq LLM.
+    def _initialize_llm(self):
+        """Initialize LLM (OpenAI or Groq based on config).
         
         Returns:
-            ChatGroq instance
+            ChatOpenAI or ChatGroq instance
             
         Raises:
             LLMError: If LLM initialization fails
         """
         try:
-            from .core.config import GROQ_API_KEY
-            return ChatGroq(
-                model=LLM_MODEL,
-                api_key=GROQ_API_KEY,
-                temperature=LLM_TEMPERATURE,
-                max_tokens=LLM_MAX_TOKENS
-            )
+            from .core.config import LLM_PROVIDER, OPENAI_API_KEY, GROQ_API_KEY
+            
+            if LLM_PROVIDER == "openai":
+                if not OPENAI_API_KEY:
+                    raise LLMError("OPENAI_API_KEY not found in configuration")
+                logger.info(f"Initializing OpenAI LLM: {LLM_MODEL}")
+                return ChatOpenAI(
+                    model=LLM_MODEL,
+                    api_key=OPENAI_API_KEY,
+                    temperature=LLM_TEMPERATURE,
+                    max_tokens=LLM_MAX_TOKENS
+                )
+            else:  # groq
+                if not GROQ_API_KEY:
+                    raise LLMError("GROQ_API_KEY not found in configuration")
+                logger.info(f"Initializing Groq LLM: {LLM_MODEL}")
+                return ChatGroq(
+                    model=LLM_MODEL,
+                    api_key=GROQ_API_KEY,
+                    temperature=LLM_TEMPERATURE,
+                    max_tokens=LLM_MAX_TOKENS
+                )
         except Exception as e:
             raise LLMError(f"Failed to initialize LLM: {e}") from e
     
     def _create_prompt(self) -> ChatPromptTemplate:
-        """Create optimized prompt template.
+        """Create optimized prompt template for medical product consultation.
         
         Returns:
             ChatPromptTemplate instance
         """
-        system_message = """Bạn là trợ lý AI của Tâm Quốc Tế, tư vấn về sản phẩm y tế và thuốc.
+        system_message = """Bạn là trợ lý AI chuyên nghiệp của Tâm Quốc Tế, chuyên tư vấn về các sản phẩm y tế, thực phẩm chức năng và thuốc.
 
-QUY TẮC:
-1. CHỈ dùng thông tin trong [THÔNG TIN] bên dưới. KHÔNG suy đoán hay dùng kiến thức ngoài.
-2. Nếu không có thông tin: "Xin lỗi, tôi không có thông tin về [tên sản phẩm] trong cơ sở dữ liệu. Vui lòng liên hệ Tâm Quốc Tế."
-3. Trả lời tiếng Việt, rõ ràng, trích dẫn chính xác số liệu từ context.
-4. Khi hỏi "giá", "liều dùng" mà không nêu tên → tham chiếu sản phẩm từ câu hỏi GẦN NHẤT.
-5. Từ "này", "đó", "thuốc này" → tham chiếu sản phẩm từ câu hỏi TRƯỚC.
+VAI TRÒ:
+- Tư vấn chính xác, đầy đủ về thông tin sản phẩm
+- Hỗ trợ khách hàng hiểu rõ công dụng, liều dùng, đối tượng sử dụng
+- Cung cấp thông tin giá cả và chính sách mua hàng
+- Thân thiện, chuyên nghiệp, dễ hiểu
 
-THÔNG TIN TỪ CƠ SỞ DỮ LIỆU:
+QUY TẮC NGHIÊM NGẶT:
+1. CHỈ SỬ DỤNG thông tin trong phần [THÔNG TIN SẢN PHẨM] bên dưới
+2. TUYỆT ĐỐI KHÔNG tự suy đoán, bịa đặt, hoặc sử dụng kiến thức bên ngoài
+3. Nếu KHÔNG TÌM THẤY thông tin: "Xin lỗi, hiện tại tôi không có thông tin về [tên sản phẩm/câu hỏi] trong cơ sở dữ liệu. Vui lòng liên hệ hotline Tâm Quốc Tế để được tư vấn chi tiết hơn."
+
+CÁCH TRẢ LỜI:
+- Luôn trả lời bằng tiếng Việt, rõ ràng, dễ hiểu
+- Trích dẫn CHÍNH XÁC số liệu, thông tin từ database (ví dụ: "200mg/viên", "3 viên/ngày", "2.200.000₫")
+- Khi nói về giá: luôn nêu rõ giá bán lẻ và chính sách giảm giá (nếu có)
+- Khi nói về liều dùng: phân biệt rõ "duy trì" và "tăng cường" nếu có
+- Nhấn mạnh thông tin an toàn, đối tượng sử dụng, chống chỉ định
+
+XỬ LÝ CÂU HỎI:
+- Câu hỏi về "giá", "liều dùng", "tác dụng", "đại lý" mà KHÔNG nêu tên sản phẩm → BẠN PHẢI tự động hiểu đang nói về sản phẩm từ câu hỏi/hội thoại GẦN NHẤT trong lịch sử chat
+- Ví dụ: Nếu trước đó người dùng hỏi "fucoidan", sau đó hỏi "gia dai ly vip" → BẠN PHẢI hiểu là hỏi về giá đại lý VIP của The Fucoidan
+- Từ thay thế như "này", "đó", "thuốc này", "sản phẩm đó" → luôn tham chiếu sản phẩm từ câu hỏi/hội thoại TRƯỚC ĐÓ
+- Câu hỏi chung chung như "thuốc điều trị ung thư" → BẠN PHẢI tìm các sản phẩm có công dụng "hỗ trợ điều trị ung thư", "phòng ngừa ung thư" trong database
+- Câu hỏi so sánh 2 sản phẩm → so sánh dựa trên thông tin trong database
+
+[THÔNG TIN SẢN PHẨM]:
 {context}
 
-NHẮC LẠI: CHỈ dùng thông tin trong [THÔNG TIN] trên. KHÔNG tạo ra thông tin mới."""
+NHẮC NHỞ QUAN TRỌNG:
+- BẠN PHẢI CHỈ sử dụng thông tin trong [THÔNG TIN SẢN PHẨM] ở trên
+- Nếu thông tin không có trong database, bạn PHẢI thông báo rõ ràng là không có thông tin
+- KHÔNG BAO GIỜ tự tạo ra thông tin, số liệu, hoặc mô tả mới"""
         
         return ChatPromptTemplate.from_messages([
             ("system", system_message),
@@ -158,6 +195,11 @@ NHẮC LẠI: CHỈ dùng thông tin trong [THÔNG TIN] trên. KHÔNG tạo ra t
     def _rewrite_query(self, question: str, chat_history: List[BaseMessage]) -> str:
         """Rewrite/expand query to improve retrieval quality.
         
+        Enhanced version that:
+        - Extracts product names from both questions AND responses
+        - Expands queries with related keywords
+        - Handles contextual references better
+        
         Args:
             question: Original user question
             chat_history: Previous conversation messages
@@ -165,21 +207,159 @@ NHẮC LẠI: CHỈ dùng thông tin trong [THÔNG TIN] trên. KHÔNG tạo ra t
         Returns:
             Rewritten/expanded query for better retrieval
         """
-        # Nếu có chat history, thử tìm tên sản phẩm từ câu hỏi trước
-        if chat_history:
-            # Lấy danh sách sản phẩm từ JSON
-            product_names = self._get_product_names()
+        original_question = question
+        product_names = self._get_product_names()
+        
+        # Keywords mapping for query expansion
+        keyword_expansions = {
+            "gia": ["giá", "giá cả", "giá bán", "giá bán lẻ", "giá đại lý"],
+            "liều dùng": ["liều lượng", "cách dùng", "hướng dẫn sử dụng"],
+            "tác dụng": ["công dụng", "hiệu quả", "tác dụng phụ"],
+            "ung thư": ["hỗ trợ điều trị ung thư", "phòng ngừa ung thư", "ung thư"],
+            "dai ly": ["đại lý", "giá đại lý"],
+            "vip": ["đại lý vip", "giá vip"]
+        }
+        
+        # Step 1: Intelligently detect if this is a NEW product search vs. question about current product
+        question_lower = question.lower()
+        question_words = question_lower.split()
+        
+        # Check if question already mentions a product name
+        question_mentions_product = False
+        for product in product_names:
+            if product and product.lower() in question_lower:
+                question_mentions_product = True
+                break
+        
+        # Detect intent: Is this asking about product attributes or searching for new product?
+        # Strategy: Check for question words that indicate search/comparison intent
+        
+        # Question words that typically indicate NEW product search (tìm kiếm)
+        search_question_words = ["nào", "nao", "gì", "gi", "bao nhiêu", "ba nhieu"]
+        
+        # Attribute keywords that indicate question about CURRENT product (hỏi về thuộc tính)
+        attribute_keywords = [
+            "gia", "giá", "liều", "lieu", "liều lượng", "lieu luong",
+            "tác dụng", "tac dung", "công dụng", "cong dung",
+            "cách dùng", "cach dung", "hướng dẫn", "huong dan",
+            "đối tượng", "doi tuong", "ai", "cho ai",
+            "dai ly", "đại lý", "vip", "giá bán", "gia ban",
+            "có mã", "co ma", "code", "mã code"
+        ]
+        
+        # Heuristic: If question has search words AND no attribute keywords → likely new product search
+        has_search_words = any(word in question_lower for word in search_question_words)
+        has_attribute_keywords = any(keyword in question_lower for keyword in attribute_keywords)
+        
+        # Decision logic:
+        # 1. If question mentions a product → it's about that product (not new search)
+        # 2. If has search words BUT has attribute keywords → likely asking about attributes
+        # 3. If has search words AND no attribute keywords AND no product mentioned → likely new search
+        # 4. If no search words but has attribute keywords → asking about current product
+        
+        is_new_product_search = False
+        if question_mentions_product:
+            # Already mentions a product, so it's about that product
+            is_new_product_search = False
+        elif has_search_words and not has_attribute_keywords:
+            # Has search words but no attribute keywords → likely searching for new product
+            is_new_product_search = True
+        elif has_search_words and has_attribute_keywords:
+            # Has both → check context: if question starts with search pattern, it's likely new search
+            # But if it's mid-conversation with attribute keywords, it's about current product
+            # Default: treat as attribute question (safer, as we can add context)
+            is_new_product_search = False
+        else:
+            # No clear indicators → check if it's a short attribute question
+            # Short questions (<= 5 words) with attribute keywords → likely about current product
+            is_new_product_search = len(question_words) > 5 and not has_attribute_keywords
+        
+        logger.info(f"Query intent analysis: mentions_product={question_mentions_product}, "
+                   f"has_search_words={has_search_words}, has_attribute_keywords={has_attribute_keywords}, "
+                   f"is_new_product_search={is_new_product_search}")
+        
+        # Step 2: Only add product context if NOT a new product search AND question is about attributes
+        found_product_in_context = None
+        if chat_history and not is_new_product_search:
+            # Extract product names from recent messages (both questions AND responses)
+            recent_messages = chat_history[-6:]  # Look at more messages
             
-            # Lấy câu hỏi gần nhất
-            recent_questions = [msg.content for msg in chat_history[-4:] if hasattr(msg, 'content')]
-            for recent_q in reversed(recent_questions):
-                # Tìm tên sản phẩm trong câu hỏi trước
-                for product in product_names:
-                    if product and product.lower() in str(recent_q).lower():
-                        # Nếu câu hỏi hiện tại không có tên sản phẩm, thêm vào
-                        if product.lower() not in question.lower():
-                            return f"{question} {product}"
+            # First, check if current question already mentions a product
+            current_question_has_product = False
+            for product in product_names:
+                if product and product.lower() in question_lower:
+                    current_question_has_product = True
+                    break
+            
+            # If not, try to find product from chat history (only for attribute questions)
+            if not current_question_has_product:
+                # Check for indirect references like "gia", "liều dùng" without product name
+                needs_product_context = any(keyword in question_lower for keyword in 
+                                          ["gia", "giá", "liều", "liều lượng", "lieu luong",
+                                           "tác dụng", "công dụng", "dai ly", "đại lý", 
+                                           "vip", "giá bán", "cach dung", "cách dùng",
+                                           "doi tuong", "đối tượng", "su dung", "sử dụng",
+                                           "co ma", "có mã", "code"])
+                
+                if needs_product_context:
+                    # Try to find product from recent messages
+                    for msg in reversed(recent_messages):
+                        if hasattr(msg, 'content'):
+                            msg_content = str(msg.content).lower()
+                            
+                            # Check all product names
+                            for product in product_names:
+                                if product and product.lower() in msg_content:
+                                    found_product_in_context = product
+                                    break
+                            
+                            if found_product_in_context:
+                                break
+                    
+                    if found_product_in_context:
+                        question = f"{question} {found_product_in_context}"
+                        logger.info(f"Added product context: {found_product_in_context} to query")
+        
+        # Step 3: Expand query with related keywords for better semantic search
+        question_lower = question.lower()
+        expanded_terms = []
+        
+        # Expand with keyword synonyms
+        for keyword, synonyms in keyword_expansions.items():
+            if keyword in question_lower:
+                # Add first synonym that's not already in question
+                for synonym in synonyms:
+                    if synonym not in question_lower:
+                        expanded_terms.append(synonym)
                         break
+        
+        # Step 4: For new product search questions, expand with related medical terms
+        if is_new_product_search:
+            # Expand based on medical conditions mentioned
+            if any(term in question_lower for term in ["ung thư", "cancer", "tumor"]):
+                expanded_terms.extend(["hỗ trợ điều trị ung thư", "phòng ngừa ung thư"])
+            elif any(term in question_lower for term in ["yeu sinh ly", "yếu sinh lý", "sinh ly", "sinh lý"]):
+                expanded_terms.extend(["bổ thận", "tráng dương", "testosterone", "sinh lực nam"])
+            elif any(term in question_lower for term in ["dot quy", "đột quỵ", "tai bien", "tai biến"]):
+                expanded_terms.extend(["phòng ngừa đột quỵ", "hỗ trợ phục hồi sau đột quỵ"])
+            elif any(term in question_lower for term in ["gan", "cholesterol", "huyet ap", "huyết áp"]):
+                expanded_terms.extend(["giải độc gan", "giảm cholesterol", "điều hòa huyết áp"])
+        else:
+            # For attribute questions, add medical context if relevant
+            if any(term in question_lower for term in ["ung thư", "cancer", "tumor"]):
+                if "hỗ trợ" not in question_lower:
+                    expanded_terms.append("hỗ trợ điều trị")
+        
+        # Combine original question with expansions
+        if expanded_terms:
+            expanded_query = f"{question} {' '.join(expanded_terms)}"
+            logger.info(f"Expanded query: {original_question} -> {expanded_query}")
+            return expanded_query
+        
+        if question != original_question:
+            logger.info(f"Rewritten query: {original_question} -> {question}")
+        elif is_new_product_search:
+            logger.info(f"New product search query: {original_question} (no product context added)")
         
         return question
     
@@ -227,7 +407,8 @@ NHẮC LẠI: CHỈ dùng thông tin trong [THÔNG TIN] trên. KHÔNG tạo ra t
     def _initialize_vector_store(self) -> None:
         """Initialize vector store with data from JSON file.
         
-        Flow: JSON Data → Chunking → PineconeEmbeddings → Pinecone Index
+        Flow: JSON Data → Documents → Chunking → PineconeEmbeddings → Pinecone Index
+        Each chunk = 1 vector, optimized for semantic search
         """
         if self.vector_store.index_exists():
             try:
@@ -252,6 +433,7 @@ NHẮC LẠI: CHỈ dùng thông tin trong [THÔNG TIN] trên. KHÔNG tạo ra t
         if not JSON_DATA_FILE.exists():
             raise ConfigurationError(f"Data file not found: {JSON_DATA_FILE}")
         
+        # Load and chunk documents for optimal semantic search
         chunked_docs = load_and_chunk_json(
             str(JSON_DATA_FILE),
             chunk_size=CHUNK_SIZE,
@@ -261,7 +443,7 @@ NHẮC LẠI: CHỈ dùng thông tin trong [THÔNG TIN] trên. KHÔNG tạo ra t
         if not chunked_docs:
             raise ConfigurationError("No documents loaded from JSON file")
         
-        logger.info(f"Loaded {len(chunked_docs)} chunks from JSON")
+        logger.info(f"Loaded and chunked into {len(chunked_docs)} chunks from JSON")
         logger.info("Uploading chunks to Pinecone...")
         
         self.vector_store.create_index(chunked_docs)

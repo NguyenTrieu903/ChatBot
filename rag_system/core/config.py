@@ -14,13 +14,15 @@ JSON_DATA_FILE = DATA_DIR / "traning.json"
 
 # API Keys
 GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
+OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
 
-# LLM Configuration
-LLM_MODEL = "llama-3.1-8b-instant"
+# LLM Configuration - Using OpenAI GPT-4o for better performance
+LLM_PROVIDER = "openai"  # "openai" or "groq"
+LLM_MODEL = "gpt-4o"  # OpenAI GPT-4o optimized for accuracy
 # Giảm temperature để trả lời chính xác hơn cho domain medical
-LLM_TEMPERATURE = 0.3  # Giảm từ 0.7 xuống 0.3 để ít "sáng tạo" hơn
-LLM_MAX_TOKENS = 2000  # Giảm để tiết kiệm tokens và trả lời tập trung hơn
+LLM_TEMPERATURE = 0.2  # Low temperature for factual, consistent responses
+LLM_MAX_TOKENS = 2000  # Sufficient for detailed product information
 
 # Embedding Configuration
 EMBEDDING_MODEL = "multilingual-e5-large"
@@ -30,15 +32,17 @@ EMBEDDING_DIMENSION = 1024  # multilingual-e5-large dimension
 DEFAULT_USE_CASE = "vietnamese_support"
 DEFAULT_INDEX_NAME = f"{DEFAULT_USE_CASE}-index"
 # Tăng số lượng documents để có nhiều thông tin hơn
-RETRIEVER_K = 5  # Giảm xuống 5 để tiết kiệm tokens, vẫn đủ thông tin
-RETRIEVER_SCORE_THRESHOLD = 0.5  # Chỉ lấy documents có similarity >= 0.5
+RETRIEVER_K = 8  # Tăng lên 8 để có nhiều context hơn cho semantic search
+RETRIEVER_SCORE_THRESHOLD = 0.3  # Giảm xuống 0.3 để lấy nhiều documents liên quan hơn
 
 # Memory Configuration
 MEMORY_WINDOW_SIZE = 5  # Number of conversation exchanges to keep
 
 # Chunking Configuration
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 200
+# Optimized for product information: chunk size 800-900 allows each chunk to contain
+# one complete topic (e.g., dosage, price, effects) while maintaining context
+CHUNK_SIZE = 900  # Optimal for semantic search of product details
+CHUNK_OVERLAP = 200  # Ensure no information loss at chunk boundaries
 
 # Pinecone Configuration
 PINECONE_CLOUD = "aws"
@@ -55,11 +59,18 @@ def validate_config() -> None:
     Raises:
         ValueError: If required configuration is missing
     """
-    if not GROQ_API_KEY:
-        raise ValueError(
-            "GROQ_API_KEY not found in environment variables. "
-            "Please set it in .env file or environment."
-        )
+    if LLM_PROVIDER == "openai":
+        if not OPENAI_API_KEY:
+            raise ValueError(
+                "OPENAI_API_KEY not found in environment variables. "
+                "Please set it in .env file or environment."
+            )
+    elif LLM_PROVIDER == "groq":
+        if not GROQ_API_KEY:
+            raise ValueError(
+                "GROQ_API_KEY not found in environment variables. "
+                "Please set it in .env file or environment."
+            )
     
     if not PINECONE_API_KEY:
         raise ValueError(
