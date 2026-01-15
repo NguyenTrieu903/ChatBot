@@ -1,173 +1,109 @@
-# 🏥 Chatbot Y Tế Tiếng Việt - ChromaDB + LangChain + Groq AI
+# 🏥 Vietnamese Medical Chatbot
 
-Chatbot AI hỗ trợ tư vấn về sản phẩm y tế, sử dụng công nghệ RAG (Retrieval-Augmented Generation) với:
-- **ChromaDB**: Vector database local, miễn phí
-- **LangChain**: Framework xây dựng ứng dụng AI
-- **Groq AI**: LLM inference cực nhanh (Llama 3.3 70B)
-- **HuggingFace Embeddings**: multilingual-e5-large model
+AI chatbot for medical product consultation using **ChromaDB + LangChain + Groq AI**.
 
-## ⚡ Cài đặt nhanh (5-10 phút)
+## ✨ Features
 
-### 1. Yêu cầu hệ thống
-- Python 3.10+
-- 3GB RAM
-- 3GB dung lượng trống (cho embedding model)
+- 🤖 **Groq AI** - Fast LLM inference (Llama 3.3 70B, free tier)
+- 🗄️ **ChromaDB** - Local vector database (no API key needed!)
+- 🔗 **LangChain** - RAG implementation with conversation memory
+- 🇻🇳 **Vietnamese Support** - Multilingual embeddings (multilingual-e5-large)
+- 💬 **Chat History** - Remembers last 5 conversation exchanges
+- 🎨 **Beautiful UI** - Streamlit web interface
 
-### 2. Cài đặt thư viện
+## 🚀 Quick Start (3 Steps)
+
+### 1. Install Dependencies
 
 ```bash
-# Kích hoạt Python environment
-conda activate py310  # hoặc venv của bạn
-
-# Di chuyển vào thư mục project
 cd AI_Master_Hackathon
-
-# Cài đặt dependencies
 pip install -r requirements.txt
 ```
 
-**Lưu ý**: Lần đầu chạy sẽ tải model `multilingual-e5-large` (~1.5GB). Sau đó chạy nhanh!
+**Note:** First run will download embedding model (~1.5GB). After that, everything runs fast!
 
-### 3. Lấy Groq API Key (miễn phí)
+### 2. Setup API Key
 
-1. Truy cập: https://console.groq.com/keys
-2. Sign up/Login (miễn phí, không cần thẻ)
-3. Click **"Create API Key"**
-4. Copy API key
+Get your **free** Groq API key:
+1. Visit: https://console.groq.com/keys
+2. Sign up (free, no credit card required)
+3. Create an API key
 
-**Groq Free Tier:**
-- ✅ 14,400 requests/day
-- ✅ 30 requests/minute
-- ✅ Cực nhanh (<500ms response)
-- ✅ Model Llama 3.3 70B
-
-### 4. Tạo file `.env`
-
-Tạo file `.env` trong thư mục `AI_Master_Hackathon` với nội dung:
+Create a `.env` file in the `AI_Master_Hackathon` folder:
 
 ```bash
 GROQ_API_KEY=your-groq-api-key-here
 ```
 
-**Windows (Command Prompt):**
-```cmd
-echo GROQ_API_KEY=your-groq-api-key-here > .env
-```
-
-**Linux/Mac:**
+**Quick way:**
 ```bash
-echo "GROQ_API_KEY=your-groq-api-key-here" > .env
+# Copy template
+cp env.template .env
+
+# Edit .env and add your API key
 ```
 
-### 5. Chạy setup (khởi tạo ChromaDB)
-
-```bash
-python setup.py
-```
-
-Quá trình này sẽ:
-- Tải embedding model (~1.5GB) lần đầu
-- Đọc dữ liệu từ `data/traning.json`
-- Tạo embeddings cho các document
-- Lưu vào ChromaDB (local, trong thư mục `chroma_db/`)
-
-**Thời gian**: ~3-5 phút lần đầu, sau đó chỉ vài giây.
-
-### 6. Chạy chatbot
-
-#### 🎨 Web UI (Khuyên dùng)
+### 3. Run the App
 
 ```bash
 streamlit run app.py
 ```
 
-Mở trình duyệt tại: `http://localhost:8501`
+That's it! 🎉
 
-**Tính năng Web UI:**
-- ✨ Giao diện đẹp, thân thiện
-- 💬 Chat history
-- 🔍 Hiển thị nguồn tài liệu
-- 📊 Thống kê real-time
+The app will:
+- ✅ Auto-initialize ChromaDB on first run
+- ✅ Load medical data from `data/traning.json`
+- ✅ Create embeddings and vector index
+- ✅ Start the web interface at `http://localhost:8501`
 
-#### 💻 Terminal (Đơn giản)
-
-```bash
-python vietnamese_chatbot.py
-```
-
-## 📊 Kiến trúc hệ thống
+## 📊 Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    User Interface                            │
-│              (Streamlit Web UI / Terminal)                   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                Vietnamese Chatbot                            │
-│          (vietnamese_chatbot.py)                            │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    RAG Chain                                 │
-│            (rag_system/rag_chain.py)                        │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ ConversationBufferWindowMemory (k=5)                 │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-           │                                    │
-           ▼                                    ▼
-┌──────────────────────────┐      ┌──────────────────────────┐
-│   Vector Store           │      │      LLM (Groq AI)       │
-│  (ChromaDB - Local)      │      │  Llama 3.3 70B Model     │
-│                          │      │                          │
-│  HuggingFace Embeddings  │      │  Temperature: 0.7        │
-│  multilingual-e5-large   │      │  Max tokens: 8000        │
-└──────────────────────────┘      └──────────────────────────┘
+User → Streamlit UI → RAG Chain
+                         ↓
+               ┌─────────┴─────────┐
+               ↓                   ↓
+         ChromaDB              Groq AI
+    (HuggingFace E5)      (Llama 3.3 70B)
 ```
 
-### Flow hoạt động:
+### How it works:
 
-1. **User Input** → Câu hỏi từ người dùng
-2. **Embedding** → Chuyển câu hỏi thành vector (multilingual-e5-large)
-3. **ChromaDB Retrieval** → Tìm kiếm top-k documents tương tự (cosine similarity)
-4. **Context Formation** → Kết hợp documents thành context
-5. **LLM Generation** → Groq AI (Llama 3.3 70B) tạo câu trả lời
-6. **Memory Update** → Lưu conversation history (k=5 exchanges)
+1. **User Question** → Embedded using multilingual-e5-large
+2. **ChromaDB** → Retrieves top 5 relevant documents
+3. **Context Formation** → Combines documents with chat history
+4. **Groq AI** → Generates answer using Llama 3.3 70B
+5. **Memory** → Saves conversation for context
 
-## 🗂️ Cấu trúc dữ liệu
+## 📁 Project Structure
 
-File `data/traning.json` chứa thông tin sản phẩm y tế:
-
-```json
-[
-  {
-    "name": "Tên sản phẩm",
-    "metadata": "Mô tả chi tiết về sản phẩm, công dụng, liều dùng, giá..."
-  }
-]
+```
+AI_Master_Hackathon/
+├── app.py                    # Streamlit web UI (auto-init ChromaDB)
+├── requirements.txt          # Python dependencies
+├── env.template             # Environment config template
+├── data/
+│   └── traning.json         # Medical product data
+├── rag_system/
+│   ├── vector_store.py      # ChromaDB integration
+│   ├── rag_chain.py         # RAG chain with memory
+│   ├── retrieval_chain.py   # Backward compatibility
+│   └── utils/
+│       └── common.py        # Helper functions
+├── data_loader.py           # JSON data loader with chunking
+└── chroma_db/              # Vector database (auto-created)
 ```
 
-**Các sản phẩm hiện có:**
-- The Fucoidan (hỗ trợ ung thư)
-- The Fucoidan xK (phiên bản nâng cấp)
-- β-Glucan Ball (chiết xuất nấm)
-- Kidney & Men's (bổ thận nam giới)
-- Power HLP (phòng ngừa đột quỵ)
-- The Reishi (Linh Chi + Agaricus)
-- Paracetamol (giảm đau, hạ sốt)
-
-## 💡 Ví dụ sử dụng
+## 💡 Usage Examples
 
 ```
 👤 User: The Fucoidan là gì?
-🤖 Bot: The Fucoidan là sản phẩm chứa 100% tinh chất Fucoidan chiết xuất từ 
-        Tảo nâu Okinawa Mozuku Nhật Bản với hàm lượng cao 200mg/viên...
+🤖 Bot: The Fucoidan là sản phẩm chứa 100% tinh chất Fucoidan 
+        chiết xuất từ Tảo nâu Okinawa Mozuku Nhật Bản...
 
 👤 User: Giá bao nhiêu?
-🤖 Bot: The Fucoidan có giá 2.200.000₫ cho hộp 90 viên...
+🤖 Bot: The Fucoidan có giá 2.200.000₫ cho hộp 90 viên.
 
 👤 User: Liều dùng như thế nào?
 🤖 Bot: Liều dùng The Fucoidan:
@@ -175,208 +111,202 @@ File `data/traning.json` chứa thông tin sản phẩm y tế:
         - Tăng cường: 6 viên/ngày (2 lần/ngày, mỗi lần 3 viên)
 ```
 
-## 🔧 Cấu hình nâng cao
+## 📝 Adding New Data
 
-### Tùy chỉnh Chunking
-
-File `data_loader.py`:
-
-```python
-def load_and_chunk_json(
-    json_file: str,
-    chunk_size: int = 1000,     # Kích thước chunk
-    chunk_overlap: int = 200     # Độ overlap giữa chunks
-)
-```
-
-### Tùy chỉnh Retrieval
-
-File `rag_system/rag_chain.py`:
-
-```python
-self.retriever = self.vector_store.get_retriever(
-    k=5,                      # Số documents trả về
-    score_threshold=None      # Ngưỡng similarity (None = không giới hạn)
-)
-```
-
-### Tùy chỉnh LLM
-
-File `rag_system/rag_chain.py`:
-
-```python
-ChatGroq(
-    model="llama-3.3-70b-versatile",  # Model name
-    temperature=0.7,                   # Độ sáng tạo (0-1)
-    max_tokens=8000                    # Độ dài response
-)
-```
-
-### Tùy chỉnh Memory
-
-```python
-ConversationBufferWindowMemory(
-    memory_key="chat_history",
-    return_messages=True,
-    k=5  # Giữ 5 exchanges gần nhất
-)
-```
-
-## 🆚 So sánh với Pinecone
-
-| Tính năng | ChromaDB | Pinecone |
-|-----------|----------|----------|
-| **Giá** | Miễn phí 100% | Free tier có giới hạn |
-| **Vị trí** | Local | Cloud |
-| **API Key** | Không cần | Cần |
-| **Tốc độ** | Nhanh (local) | Nhanh (tối ưu cho scale) |
-| **Scale** | Tốt cho small-medium | Tốt cho large scale |
-| **Privacy** | Cao (local) | Phụ thuộc cloud |
-| **Setup** | Đơn giản | Cần API key |
-
-**Khi nào dùng ChromaDB:**
-- ✅ Prototype/Development
-- ✅ Dữ liệu nhạy cảm (y tế, tài chính)
-- ✅ Budget hạn chế
-- ✅ Dữ liệu nhỏ-trung bình (<1M vectors)
-
-**Khi nào dùng Pinecone:**
-- ✅ Production scale lớn (>1M vectors)
-- ✅ Multi-region deployment
-- ✅ Cần managed service
-- ✅ Team collaboration
-
-## 🐛 Troubleshooting
-
-### Lỗi: "GROQ_API_KEY not found"
-
-**Giải pháp:**
-```bash
-# Kiểm tra file .env
-cat .env
-
-# Nếu không có, tạo file .env
-echo "GROQ_API_KEY=your-key-here" > .env
-```
-
-### Lỗi: "No module named 'chromadb'"
-
-**Giải pháp:**
-```bash
-pip install -r requirements.txt
-```
-
-### Lỗi: "Cannot download model"
-
-**Nguyên nhân:** Không có internet hoặc HuggingFace bị block
-
-**Giải pháp:**
-1. Kiểm tra kết nối internet
-2. Nếu ở Việt Nam, có thể cần VPN để tải model lần đầu
-3. Sau khi tải xong, chạy offline được
-
-### Lỗi: "Collection not found"
-
-**Giải pháp:**
-```bash
-# Xóa database cũ và tạo lại
-rm -rf chroma_db/
-python setup.py
-```
-
-### Chatbot trả lời không chính xác
-
-**Kiểm tra:**
-1. Dữ liệu trong `data/traning.json` đầy đủ chưa?
-2. Đã chạy `python setup.py` sau khi cập nhật dữ liệu?
-3. Tăng số documents retrieve: `k=10` trong `get_retriever()`
-
-## 📝 Thêm dữ liệu mới
-
-1. **Cập nhật file JSON:**
+1. **Edit data file:**
 
 ```json
-{
-  "name": "Sản phẩm mới",
-  "metadata": "Mô tả chi tiết..."
-}
+// data/traning.json
+[
+  {
+    "name": "Product Name",
+    "metadata": "Detailed product information..."
+  }
+]
 ```
 
-2. **Xóa ChromaDB cũ và tạo lại:**
+2. **Delete existing database:**
 
 ```bash
 rm -rf chroma_db/
-python setup.py
 ```
 
-3. **Khởi động lại chatbot:**
+3. **Restart the app:**
 
 ```bash
 streamlit run app.py
 ```
 
-## 🚀 Deploy Production
+The app will auto-reinitialize with the new data!
 
-### Option 1: Docker (Recommended)
+## 🔧 Configuration
 
-```dockerfile
-FROM python:3.10-slim
+### Adjust Chunking
 
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+**File:** `data_loader.py`
 
-COPY . .
-RUN python setup.py
-
-CMD ["streamlit", "run", "app.py", "--server.port=8501"]
+```python
+load_and_chunk_json(
+    json_file,
+    chunk_size=1000,      # Chunk size in characters
+    chunk_overlap=200      # Overlap between chunks
+)
 ```
 
-### Option 2: VPS (Ubuntu)
+### Adjust Retrieval
 
+**File:** `rag_system/rag_chain.py`
+
+```python
+self.retriever = self.vector_store.get_retriever(
+    k=5,                  # Number of documents to retrieve
+    score_threshold=None  # Similarity threshold (0-1)
+)
+```
+
+### Adjust LLM
+
+**File:** `rag_system/rag_chain.py`
+
+```python
+ChatGroq(
+    model="llama-3.3-70b-versatile",  # Model name
+    temperature=0.7,                   # Creativity (0-1)
+    max_tokens=8000                    # Max response length
+)
+```
+
+### Adjust Memory
+
+**File:** `rag_system/rag_chain.py`
+
+```python
+ConversationBufferWindowMemory(
+    memory_key="chat_history",
+    return_messages=True,
+    k=5  # Keep last 5 conversation exchanges
+)
+```
+
+## 🆚 Why ChromaDB?
+
+| Feature | ChromaDB | Pinecone |
+|---------|----------|----------|
+| **Cost** | 100% Free | Free tier limited |
+| **Location** | Local | Cloud |
+| **API Key** | Not needed | Required |
+| **Speed** | Fast (local) | Fast (optimized) |
+| **Privacy** | High (local) | Cloud-dependent |
+| **Setup** | Simple | Need API key |
+| **Scale** | Small-medium | Large scale |
+
+**Use ChromaDB for:**
+- ✅ Development & prototyping
+- ✅ Sensitive data (medical, financial)
+- ✅ Budget constraints
+- ✅ Data < 1M vectors
+
+## 🐛 Troubleshooting
+
+### Error: "GROQ_API_KEY not found"
+
+**Solution:**
 ```bash
-# Install dependencies
-sudo apt update
-sudo apt install python3.10 python3-pip
+# Check if .env exists
+cat .env
 
-# Clone project
-git clone <your-repo>
-cd AI_Master_Hackathon
-
-# Setup
-pip install -r requirements.txt
-python setup.py
-
-# Run with systemd or screen
-screen -S chatbot
-streamlit run app.py --server.port 8501
+# If not, create it
+cp env.template .env
+# Then edit .env and add your API key
 ```
 
-## 📚 Tài liệu tham khảo
+### Error: "Cannot download model"
 
-- [LangChain Documentation](https://python.langchain.com/)
-- [ChromaDB Documentation](https://docs.trychroma.com/)
-- [Groq AI Documentation](https://console.groq.com/docs)
-- [HuggingFace Embeddings](https://huggingface.co/intfloat/multilingual-e5-large)
+**Cause:** Internet connection or HuggingFace access issue
 
-## 🤝 Đóng góp
+**Solution:**
+1. Check internet connection
+2. If in Vietnam, may need VPN for first download
+3. After download completes, can run offline
 
-Mọi đóng góp đều được hoan nghênh! Vui lòng:
-1. Fork repo
-2. Tạo branch mới
-3. Commit changes
-4. Push và tạo Pull Request
+### ChromaDB not initializing
+
+**Solution:**
+```bash
+# Delete existing database
+rm -rf chroma_db/
+
+# Restart app (will auto-reinitialize)
+streamlit run app.py
+```
+
+### Chatbot gives incorrect answers
+
+**Check:**
+1. Is `data/traning.json` complete?
+2. Try increasing retrieval count: `k=10` in `get_retriever()`
+3. Delete and reinitialize ChromaDB
+
+## 🔑 Free API Keys
+
+### Groq AI (Recommended)
+- **Website:** https://console.groq.com/keys
+- **Free Tier:** 14,400 requests/day, 30/minute
+- **Speed:** <500ms response time
+- **Model:** Llama 3.3 70B (70 billion parameters!)
+
+## 📚 Tech Stack
+
+- **LangChain** - RAG framework
+- **ChromaDB** - Vector database
+- **Groq AI** - LLM inference
+- **HuggingFace** - Multilingual embeddings
+- **Streamlit** - Web UI
+
+## 📖 Documentation
+
+- [LangChain Docs](https://python.langchain.com/)
+- [ChromaDB Docs](https://docs.trychroma.com/)
+- [Groq AI Docs](https://console.groq.com/docs)
+- [Streamlit Docs](https://docs.streamlit.io/)
+
+## 🎯 Medical Products Included
+
+The chatbot provides information about:
+
+1. **The Fucoidan** - Cancer support (Okinawa Mozuku seaweed)
+2. **The Fucoidan xK** - Enhanced version (3-in-1 formula)
+3. **β-Glucan Ball** - 9 Japanese mushroom extract
+4. **Kidney & Men's** - Male health support
+5. **Power HLP** - Stroke prevention (earthworm extract)
+6. **The Reishi** - Reishi mushroom + Agaricus
+7. **Paracetamol** - Pain relief and fever reduction
+
+## ⚡ Performance
+
+- **First Run:** 3-5 minutes (downloads model + creates database)
+- **Subsequent Runs:** <10 seconds (loads from disk)
+- **Response Time:** <2 seconds per query
+- **Memory Usage:** ~2GB RAM
+
+## 🤝 Contributing
+
+Contributions welcome! Feel free to:
+1. Add more medical products to `data/traning.json`
+2. Improve prompt engineering
+3. Enhance UI/UX
+4. Add more features
 
 ## 📄 License
 
-MIT License - Feel free to use for your projects!
+MIT License - Free to use for your projects!
 
-## 👨‍💻 Tác giả
+## 👨‍💻 Author
 
 AI Master Hackathon Team
 
 ---
 
-**🎉 Chúc bạn xây dựng chatbot thành công!**
+**🎉 Happy Chatting!**
 
-Nếu có câu hỏi, vui lòng tạo issue trên GitHub.
+Need help? Check the troubleshooting section above or open an issue.

@@ -1,14 +1,23 @@
-"""Streamlit UI cho Vietnamese Medical Chatbot với ChromaDB + Groq AI."""
+"""Streamlit UI cho Vietnamese Medical Chatbot với ChromaDB + Groq AI.
+
+Auto-initializes ChromaDB on first run - no setup.py needed!
+"""
 
 import streamlit as st
 import sys
+import os
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent))
 
-from vietnamese_chatbot import VietnameseChatbot
+# Load environment variables
+load_dotenv()
+
+from rag_system.retrieval_chain import RetrievalChain
+from langchain_core.messages import HumanMessage, AIMessage
 
 
 # Page config
@@ -70,14 +79,72 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+def check_environment():
+    """Check if environment is properly configured."""
+    if not os.getenv("GROQ_API_KEY"):
+        st.error("❌ GROQ_API_KEY not found in .env file!")
+        st.info("""
+        **Setup Instructions:**
+        1. Get a free API key from: https://console.groq.com/keys
+        2. Create a `.env` file in the AI_Master_Hackathon folder
+        3. Add this line: `GROQ_API_KEY=your-api-key-here`
+        4. Restart the app
+        """)
+        st.stop()
+        return False
+    return True
+
+
+def auto_initialize_chromadb():
+    """Auto-initialize ChromaDB if not exists."""
+    from rag_system.vector_store import VectorStore
+    from data_loader import load_and_chunk_json
+    
+    # Check if ChromaDB already exists
+    vector_store = VectorStore("vietnamese_support")
+    
+    if not vector_store.index_exists():
+        with st.spinner("🔧 First time setup: Initializing ChromaDB... (this may take a few minutes)"):
+            st.info("📥 Downloading embedding model and creating vector database...")
+            
+            # Load and chunk data
+            json_file = "data/traning.json"
+            if not os.path.exists(json_file):
+                st.error(f"❌ Training data not found: {json_file}")
+                st.stop()
+                return False
+            
+            try:
+                chunked_documents = load_and_chunk_json(json_file, chunk_size=1000, chunk_overlap=200)
+                vector_store.create_index(chunked_documents)
+                st.success("✅ ChromaDB initialized successfully!")
+                return True
+            except Exception as e:
+                st.error(f"❌ Error initializing ChromaDB: {str(e)}")
+                st.stop()
+                return False
+    else:
+        # Load existing index
+        try:
+            vector_store.load_index()
+            stats = vector_store.get_stats()
+            doc_count = stats.get('total_documents', 0)
+            if doc_count == 0:
+                st.warning("⚠️ ChromaDB exists but is empty. Reinitializing...")
+                return auto_initialize_chromadb()
+            return True
+        except Exception as e:
+            st.error(f"❌ Error loading ChromaDB: {str(e)}")
+            st.stop()
+            return False
+
+
 def initialize_session_state():
     """Initialize session state variables."""
-    if 'chatbot' not in st.session_state:
-        st.session_state.chatbot = None
+    if 'rag_chain' not in st.session_state:
+        st.session_state.rag_chain = None
     if 'messages' not in st.session_state:
         st.session_state.messages = []
-    if 'chat_started' not in st.session_state:
-        st.session_state.chat_started = False
     if 'initialized' not in st.session_state:
         st.session_state.initialized = False
 
@@ -103,15 +170,22 @@ def main():
     """Main Streamlit app."""
     initialize_session_state()
     
-    # Auto-initialize chatbot
+    # Check environment configuration
+    if not check_environment():
+        return
+    
+    # Auto-initialize ChromaDB (first time only)
     if not st.session_state.initialized:
-        with st.spinner("🤖 Đang khởi tạo chatbot..."):
+        auto_initialize_chromadb()
+        
+        # Initialize RAG chain
+        with st.spinner("🤖 Initializing chatbot..."):
             try:
-                st.session_state.chatbot = VietnameseChatbot()
+                st.session_state.rag_chain = RetrievalChain(use_case="vietnamese_support", k=5)
                 st.session_state.initialized = True
             except Exception as e:
-                st.error(f"❌ Lỗi khởi tạo: {str(e)}")
-                st.info("💡 Vui lòng kiểm tra file .env và API key")
+                st.error(f"❌ Error initializing chatbot: {str(e)}")
+                st.info("💡 Please check your .env file and API key")
                 st.stop()
     
     # Header
@@ -128,45 +202,45 @@ def main():
     
     # Chat input
     if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
-            # Add user message
-            st.session_state.messages.append({
-                "role": "user",
-                "content": prompt,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            # Display user message
-            with st.chat_message("user"):
-                st.write(prompt)
-            
-            # Get bot response
-            with st.chat_message("assistant"):
-                with st.spinner("Đang suy nghĩ..."):
-                    try:
-                        response = st.session_state.chatbot.chat(prompt)
-                        answer = response.get('answer', '')
-                        
-                        # Display response
-                        st.write(answer)
-                        
-                        # Add assistant message to session state
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": answer,
-                            "timestamp": datetime.now().isoformat(),
-                            "method": response.get('method', 'rag')
-                        })
-                        
-                    except Exception as e:
-                        error_msg = f"Xin lỗi, đã xảy ra lỗi: {str(e)}"
-                        st.error(error_msg)
-                        # Add error message to session state
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": error_msg,
-                            "timestamp": datetime.now().isoformat(),
-                            "error": True
-                        })
+        # Add user message
+        st.session_state.messages.append({
+            "role": "user",
+            "content": prompt,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Display user message
+        with st.chat_message("user"):
+            st.write(prompt)
+        
+        # Get bot response
+        with st.chat_message("assistant"):
+            with st.spinner("Đang suy nghĩ..."):
+                try:
+                    response = st.session_state.rag_chain.chat(prompt)
+                    answer = response.get('answer', '')
+                    
+                    # Display response
+                    st.write(answer)
+                    
+                    # Add assistant message to session state
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": answer,
+                        "timestamp": datetime.now().isoformat(),
+                        "method": response.get('method', 'rag')
+                    })
+                    
+                except Exception as e:
+                    error_msg = f"Xin lỗi, đã xảy ra lỗi: {str(e)}"
+                    st.error(error_msg)
+                    # Add error message to session state
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": error_msg,
+                        "timestamp": datetime.now().isoformat(),
+                        "error": True
+                    })
 
 
 if __name__ == "__main__":

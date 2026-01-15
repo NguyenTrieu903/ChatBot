@@ -1,131 +1,80 @@
-# ⚡ Quick Start Guide - 5 Phút
+# ⚡ Quick Start Guide
 
-## 🎯 Chatbot Y Tế với ChromaDB + LangChain + Groq AI
+## 3 Steps to Run the Chatbot
 
-### Bước 1: Cài đặt Python environment (1 phút)
-
+### Step 1: Install Dependencies
 ```bash
-# Đảm bảo đang dùng Python 3.10+
-python --version
-
-# Di chuyển vào thư mục project
 cd AI_Master_Hackathon
-```
-
-### Bước 2: Cài đặt dependencies (2 phút)
-
-```bash
-# Cài tất cả thư viện cần thiết
 pip install -r requirements.txt
 ```
 
-**Lưu ý**: Lần đầu sẽ tải embedding model (~1.5GB)
-
-### Bước 3: Lấy Groq API Key (30 giây)
-
-1. Truy cập: https://console.groq.com/keys
-2. Sign up/Login (miễn phí!)
-3. Click "Create API Key"
-4. Copy key
-
-### Bước 4: Tạo file .env (10 giây)
-
-**Windows:**
-```cmd
-echo GROQ_API_KEY=paste-your-key-here > .env
-```
-
-**Linux/Mac:**
+### Step 2: Setup API Key
 ```bash
-echo "GROQ_API_KEY=paste-your-key-here" > .env
+# Copy template
+cp env.template .env
+
+# Edit .env and add your Groq API key
+# Get free key at: https://console.groq.com/keys
 ```
 
-**Hoặc dùng text editor:**
-- Tạo file `.env` trong thư mục `AI_Master_Hackathon`
-- Nội dung:
+Or create `.env` manually:
 ```
-GROQ_API_KEY=your-groq-api-key-here
+GROQ_API_KEY=your-api-key-here
 ```
 
-### Bước 5: Setup ChromaDB (3-5 phút lần đầu)
-
-```bash
-python setup.py
-```
-
-Sẽ:
-- ✅ Tải embedding model (lần đầu)
-- ✅ Đọc dữ liệu từ `data/traning.json`
-- ✅ Tạo ChromaDB collection (local)
-
-### Bước 6: Chạy chatbot! 🚀
-
-**Web UI (Recommended):**
+### Step 3: Run the App
 ```bash
 streamlit run app.py
 ```
-Mở browser: http://localhost:8501
 
-**Terminal:**
+**That's it!** 🎉
+
+The app will:
+- ✅ Auto-download embedding model (first time only, ~1.5GB)
+- ✅ Auto-initialize ChromaDB vector database
+- ✅ Load medical data from `data/traning.json`
+- ✅ Open web browser at `http://localhost:8501`
+
+## First Run vs Subsequent Runs
+
+**First Run:** 3-5 minutes (downloads model + creates database)  
+**After That:** <10 seconds (everything cached!)
+
+## Troubleshooting
+
+### Missing API Key?
 ```bash
-python vietnamese_chatbot.py
+# Make sure .env file exists
+cat .env
+
+# Should see: GROQ_API_KEY=gsk_...
 ```
 
-### Bước 7: Test (optional)
-
+### Need to Reset Database?
 ```bash
-python test_chromadb.py
+# Delete database (will auto-recreate on next run)
+rm -rf chroma_db/
+
+# Windows PowerShell:
+Remove-Item -Recurse -Force chroma_db
 ```
 
-## 💬 Ví dụ
+## What Happens on First Run?
 
-```
-👤 Bạn: The Fucoidan là gì?
-🤖 Bot: The Fucoidan là sản phẩm chứa 100% tinh chất Fucoidan 
-        chiết xuất từ Tảo nâu Okinawa Mozuku Nhật Bản...
+1. 📥 Downloads `multilingual-e5-large` model (~1.5GB)
+2. 📄 Reads `data/traning.json` (7 medical products)
+3. ✂️ Chunks documents (chunk_size=1000, overlap=200)
+4. 🔢 Creates embeddings (1024-dimensional vectors)
+5. 💾 Saves to ChromaDB (local SQLite database)
+6. 🚀 Starts Streamlit web UI
 
-👤 Bạn: Giá bao nhiêu?
-🤖 Bot: The Fucoidan có giá 2.200.000₫ cho hộp 90 viên.
+## Next Steps
 
-👤 Bạn: Liều dùng như thế nào?
-🤖 Bot: Liều dùng The Fucoidan:
-        • Duy trì: 3 viên/ngày
-        • Tăng cường: 6 viên/ngày (2 lần/ngày, mỗi lần 3 viên)
-```
-
-## 🐛 Gặp lỗi?
-
-### "GROQ_API_KEY not found"
-→ Kiểm tra file `.env` đã tạo đúng chưa
-
-### "No module named 'chromadb'"
-→ Chạy: `pip install -r requirements.txt`
-
-### "Collection not found"
-→ Chạy: `python setup.py`
-
-### "Cannot download model"
-→ Kiểm tra internet. Nếu ở VN, có thể cần VPN lần đầu
-
-## 📚 Chi tiết thêm
-
-- **Full docs**: Xem `README.md`
-- **Migration guide**: Xem `CHROMADB_MIGRATION.md`
-- **Test**: Chạy `python test_chromadb.py`
-
-## 💡 Ưu điểm
-
-✅ **Miễn phí 100%**: ChromaDB local, không cần API key  
-✅ **Privacy**: Dữ liệu lưu local, an toàn  
-✅ **Nhanh**: Response <100ms (local query)  
-✅ **Đơn giản**: Setup dễ dàng, không cần cloud config  
-
-## 🎉 Done!
-
-Giờ bạn đã có chatbot y tế AI của riêng mình!
-
-**Need help?** Create issue trên GitHub
+- 📖 Read full documentation: `README.md`
+- 🎨 Customize the UI: Edit `app.py`
+- 📝 Add more data: Edit `data/traning.json`
+- ⚙️ Configure RAG: Edit `rag_system/rag_chain.py`
 
 ---
 
-Made with ❤️ by AI Master Hackathon Team
+**Need help?** Check `README.md` for detailed documentation!
