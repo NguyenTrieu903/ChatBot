@@ -2,14 +2,38 @@
 
 AI chatbot for medical product consultation using **ChromaDB + LangChain + Groq AI**.
 
+⚠️ **MEDICAL-GRADE SAFETY:** This chatbot implements strict safety controls to prevent hallucination and ensure medical information accuracy. See [SAFETY_IMPROVEMENTS.md](SAFETY_IMPROVEMENTS.md) for details.
+
 ## ✨ Features
 
+### Core Technology
 - 🤖 **Groq AI** - Fast LLM inference (Llama 3.3 70B, free tier)
 - 🗄️ **ChromaDB** - Local vector database (no API key needed!)
 - 🔗 **LangChain** - RAG implementation with conversation memory
 - 🇻🇳 **Vietnamese Support** - Multilingual embeddings (multilingual-e5-large)
 - 💬 **Chat History** - Remembers last 5 conversation exchanges
 - 🎨 **Beautiful UI** - Streamlit web interface
+
+### 🛡️ Medical Safety Features
+- 🚫 **Anti-Hallucination** - Strict prompt engineering, only answers from database
+- 📊 **Score Threshold** - Filters irrelevant context (similarity ≥ 0.7)
+- 📚 **Citation Required** - Every answer includes sources
+- 🏥 **Question Classifier** - Blocks medical diagnosis/prescription questions
+- ⚠️ **Hard Fallback** - Never guesses when data is insufficient
+- 🔒 **Safety Layer** - Multi-layer protection against medical misinformation
+- 📋 **Structured Data** - Medical fields parsing for better accuracy
+
+### ✨ Vietnamese Text Normalization (NEW!)
+- 🇻🇳 **Auto-Normalize** - Converts text without diacritics to proper Vietnamese
+  - Input: "gia bao nhieu" → Normalized: "giá bao nhiêu"
+  - Input: "thuoc bo than" → Normalized: "thuốc bổ thận"
+- 🤖 **LLM-Powered** - Uses Groq Llama 3.3 for intelligent normalization
+- 🎯 **Context-Aware** - Understands Vietnamese grammar and context
+- 📝 **Spell Check** - Fixes common typos automatically
+- ⚡ **Fast** - ~100-300ms latency, worth it for better UX
+- 🛡️ **Safe Fallback** - Uses original input if normalization fails
+
+**Benefit:** Users can type naturally without diacritics (faster, easier on mobile)
 
 ## 🚀 Quick Start (3 Steps)
 
@@ -80,35 +104,76 @@ User → Streamlit UI → RAG Chain
 
 ```
 AI_Master_Hackathon/
-├── app.py                    # Streamlit web UI (auto-init ChromaDB)
-├── requirements.txt          # Python dependencies
-├── env.template             # Environment config template
+├── app.py                       # Streamlit web UI (auto-init ChromaDB)
+├── requirements.txt             # Python dependencies
+├── env.template                 # Environment config template
+│
+├── 📖 Documentation
+│   ├── README.md               # This file
+│   ├── QUICKSTART.md           # 3-step quick start
+│   └── SAFETY_IMPROVEMENTS.md  # ⭐ Medical safety features details
+│
 ├── data/
-│   └── traning.json         # Medical product data
+│   └── traning.json            # Medical product data (7 products)
+│
 ├── rag_system/
-│   ├── vector_store.py      # ChromaDB integration
-│   ├── rag_chain.py         # RAG chain with memory
-│   ├── retrieval_chain.py   # Backward compatibility
+│   ├── vector_store.py         # ChromaDB integration + score filtering
+│   ├── rag_chain.py            # RAG chain with safety layers
+│   ├── retrieval_chain.py      # Backward compatibility
 │   └── utils/
-│       └── common.py        # Helper functions
-├── data_loader.py           # JSON data loader with chunking
-└── chroma_db/              # Vector database (auto-created)
+│       └── common.py           # Helper functions
+│
+├── data_loader.py              # JSON loader with medical fields parsing
+└── chroma_db/                  # Vector database (auto-created)
 ```
 
 ## 💡 Usage Examples
 
+### ✅ Valid Questions (Answered with Sources)
 ```
 👤 User: The Fucoidan là gì?
 🤖 Bot: The Fucoidan là sản phẩm chứa 100% tinh chất Fucoidan 
         chiết xuất từ Tảo nâu Okinawa Mozuku Nhật Bản...
+        
+        📚 Nguồn thông tin:
+          1. The Fucoidan
+        
+        ⚠️ Lưu ý: Thông tin chỉ mang tính tham khảo...
 
 👤 User: Giá bao nhiêu?
 🤖 Bot: The Fucoidan có giá 2.200.000₫ cho hộp 90 viên.
+        
+        📚 Nguồn thông tin:
+          1. The Fucoidan
 
 👤 User: Liều dùng như thế nào?
 🤖 Bot: Liều dùng The Fucoidan:
         - Duy trì: 3 viên/ngày
         - Tăng cường: 6 viên/ngày (2 lần/ngày, mỗi lần 3 viên)
+        
+        📚 Nguồn thông tin:
+          1. The Fucoidan
+```
+
+### 🚫 Blocked Questions (Safety Protection)
+```
+👤 User: Tôi bị đau bụng nên uống thuốc gì?
+🤖 Bot: ⚠️ TÔI KHÔNG THỂ ĐƯA RA CHỈ ĐỊNH Y TẾ
+        
+        Câu hỏi của bạn liên quan đến chẩn đoán hoặc chỉ định điều trị.
+        Đây là việc chỉ bác sĩ hoặc dược sĩ mới có thể làm.
+        
+        🏥 Vui lòng:
+        - Tham khảo ý kiến bác sĩ
+        - Đến nhà thuốc gặp dược sĩ
+
+👤 User: Aspirin có tác dụng gì? (not in database)
+🤖 Bot: ❌ Tôi không tìm thấy thông tin phù hợp trong cơ sở dữ liệu
+        để trả lời câu hỏi này.
+        
+        💡 Vui lòng:
+        - Thử diễn đạt câu hỏi khác đi
+        - Liên hệ dược sĩ hoặc tra cứu tài liệu chính thức
 ```
 
 ## 📝 Adding New Data
@@ -288,6 +353,15 @@ The chatbot provides information about:
 - **Subsequent Runs:** <10 seconds (loads from disk)
 - **Response Time:** <2 seconds per query
 - **Memory Usage:** ~2GB RAM
+
+## 📚 Documentation
+
+- [VIETNAMESE_NORMALIZATION.md](VIETNAMESE_NORMALIZATION.md) - Vietnamese text normalization (no diacritics → proper Vietnamese)
+- [CONDITION_DETECTION.md](CONDITION_DETECTION.md) - Intelligent medical condition detection
+- [CONTEXT_FIX.md](CONTEXT_FIX.md) - Chat history context preservation
+- [SAFETY_IMPROVEMENTS.md](SAFETY_IMPROVEMENTS.md) - Medical safety features
+- [TESTING.md](TESTING.md) - Testing guide
+- [QUICKSTART.md](QUICKSTART.md) - Quick start guide
 
 ## 🤝 Contributing
 

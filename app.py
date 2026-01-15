@@ -150,20 +150,12 @@ def initialize_session_state():
 
 
 def display_message(message: dict, index: int):
-    """Display a chat message."""
+    """Display a chat message without sources (cleaner UI)."""
     role = message['role']
     content = message['content']
     
     with st.chat_message(role):
         st.write(content)
-        
-        # Show method indicator (removed sources display)
-        if role == "assistant":
-            method = message.get('method', '')
-            doc_count = message.get('doc_count', 0)
-            
-            if method == 'direct':
-                st.caption("💡 Sử dụng kiến thức chung")
 
 
 def main():
@@ -196,6 +188,19 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
+    # Safety Warning Banner
+    st.info("""
+    ⚠️ **LƯU Ý QUAN TRỌNG VỀ AN TOÀN Y TẾ:**
+    
+    - ✅ Chatbot này CHỈ cung cấp **thông tin về sản phẩm** từ cơ sở dữ liệu
+    - ❌ KHÔNG thay thế tư vấn y tế chuyên môn từ bác sĩ/dược sĩ
+    - ❌ KHÔNG đưa ra chẩn đoán bệnh hoặc chỉ định điều trị
+    - ✅ Mọi thông tin đều được **trích dẫn nguồn** và **kiểm tra độ chính xác**
+    - 🔒 Hệ thống có các lớp bảo vệ an toàn để tránh thông tin sai lệch
+    
+    💡 **Luôn tham khảo ý kiến chuyên gia y tế trước khi sử dụng bất kỳ sản phẩm nào!**
+    """, icon="⚠️")
+    
     # Display chat history
     for idx, message in enumerate(st.session_state.messages):
         display_message(message, idx)
@@ -220,15 +225,14 @@ def main():
                     response = st.session_state.rag_chain.chat(prompt)
                     answer = response.get('answer', '')
                     
-                    # Display response
+                    # Display response (clean, no sources)
                     st.write(answer)
                     
                     # Add assistant message to session state
                     st.session_state.messages.append({
                         "role": "assistant",
                         "content": answer,
-                        "timestamp": datetime.now().isoformat(),
-                        "method": response.get('method', 'rag')
+                        "timestamp": datetime.now().isoformat()
                     })
                     
                 except Exception as e:

@@ -234,33 +234,62 @@ class VectorStore:
             }
     
     def get_retriever(self, k: int = 5, score_threshold: Optional[float] = None):
-        """Get LangChain Retriever from ChromaDB vector store.
+        """Get LangChain Retriever from ChromaDB vector store with score filtering.
         
         This is the recommended way to use vector store with LangChain RAG.
         
         Args:
-            k: Number of documents to retrieve
-            score_threshold: Minimum similarity score (0-1). If None, no threshold applied.
+            k: Number of documents to retrieve (default: 5)
+            score_threshold: Minimum similarity score (0-1). 
+                           Recommended: 0.7 for strict medical RAG
+                           If None, uses default 0.7 for safety
             
         Returns:
-            LangChain Retriever instance
+            LangChain Retriever instance with score filtering
         """
         vectorstore = self._get_vectorstore()
         
-        # Create retriever with similarity search
-        if score_threshold is not None:
-            retriever = vectorstore.as_retriever(
-                search_type="similarity_score_threshold",
-                search_kwargs={
-                    "k": k,
-                    "score_threshold": score_threshold
-                }
-            )
-        else:
-            # No threshold - return top k results
-            retriever = vectorstore.as_retriever(
-                search_type="similarity",
-                search_kwargs={"k": k}
-            )
+        # For medical/pharma domain, ALWAYS use score threshold for safety
+        # Default to 0.7 if not specified (strict filtering)
+        if score_threshold is None:
+            score_threshold = 0.7  # Strict threshold for medical safety
+            print(f"⚠️  Using default score_threshold={score_threshold} for medical safety")
+        
+        # Create retriever with similarity score threshold
+        retriever = vectorstore.as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={
+                "k": k,
+                "score_threshold": score_threshold
+            }
+        )
         
         return retriever
+    
+    def search_with_scores(self, query: str, k: int = 5, score_threshold: float = 0.7):
+        """Search documents with similarity scores for debugging.
+        
+        Args:
+            query: Search query
+            k: Number of results
+            score_threshold: Minimum similarity score
+            
+        Returns:
+            List of (Document, score) tuples that pass threshold
+        """
+        vectorstore = self._get_vectorstore()
+        
+        # Get documents with scores
+        docs_and_scores = vectorstore.similarity_search_with_relevance_scores(
+            query, k=k
+        )
+        
+        # Filter by threshold
+        filtered = [(doc, score) for doc, score in docs_and_scores if score >= score_threshold]
+        
+        print(f"🔍 Retrieved {len(docs_and_scores)} docs, {len(filtered)} passed threshold {score_threshold}")
+        for doc, score in filtered:
+            product_name = doc.metadata.get('product_name', 'Unknown')
+            print(f"   ✓ {product_name}: {score:.3f}")
+        
+        return filtered

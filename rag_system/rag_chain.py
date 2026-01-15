@@ -13,6 +13,10 @@ from langchain_core.runnables import RunnableLambda
 from operator import itemgetter
 from .utils.common import format_docs
 from data_loader import load_and_chunk_json
+from .medical_taxonomy_auto import (
+    detect_condition_and_products
+)
+from .vietnamese_normalizer import normalize_vietnamese
 
 load_dotenv()
 
@@ -31,8 +35,9 @@ class RAGChain:
         self.llm = self._initialize_llm()
         self.prompt = self._create_prompt()
         self._initialize_vector_store()
-        print("🔍 Initializing retriever...")
-        self.retriever = self.vector_store.get_retriever(k=5, score_threshold=None)
+        print("🔍 Initializing retriever with strict score threshold...")
+        # For medical safety: strict threshold 0.7 to prevent irrelevant context
+        self.retriever = self.vector_store.get_retriever(k=5, score_threshold=0.7)
         
         # Initialize ConversationBufferWindowMemory
         # k=5 means keep last 5 conversation exchanges (10 messages: 5 user + 5 assistant)
@@ -65,31 +70,41 @@ class RAGChain:
         )
 
     def _create_prompt(self) -> ChatPromptTemplate:
-        """Create optimized prompt template following best practices.
+        """Create strict medical prompt to prevent hallucination.
         
         Returns:
             ChatPromptTemplate instance
         """
-        system_message = """Bạn là trợ lý AI thông minh, hỗ trợ người dùng bằng tiếng Việt.
+        system_message = """Bạn là chatbot tư vấn thông tin sản phẩm y tế và thuốc TẬN TÂM và HỮU ÍCH.
 
-                            Nhiệm vụ của bạn:
-                            1. Sử dụng thông tin từ cơ sở dữ liệu (context) để trả lời chính xác
-                            2. Cung cấp hướng dẫn chi tiết, rõ ràng và dễ hiểu  
-                            3. Luôn trả lời bằng tiếng Việt
-                            4. Thân thiện và chuyên nghiệp
+🎯 NHIỆM VỤ CHÍNH: Trả lời câu hỏi của người dùng dựa trên thông tin trong CONTEXT bên dưới.
 
-                            Thông tin từ cơ sở dữ liệu:
-                            {context}
+✅ QUY TẮC TRẢ LỜI:
+1. HÃY TÌM thông tin trong CONTEXT và TRẢ LỜI một cách TỰ NHIÊN, HỮU ÍCH
+2. Nếu CONTEXT có thông tin liên quan → BẮT BUỘC phải trả lời (đừng sợ!)
+3. CHỈ nói "Tôi không tìm thấy thông tin..." khi CONTEXT thực sự RỖNG hoặc HOÀN TOÀN KHÔNG LIÊN QUAN
+4. KHÔNG sử dụng kiến thức bên ngoài, CHỈ dùng thông tin từ CONTEXT
+5. Trả lời ngắn gọn, rõ ràng, thân thiện
 
-                            Lưu ý:
-                            - Nếu có thông tin trong context, hãy dựa vào đó để trả lời
-                            - Khi người dùng hỏi "giá như thế nào", "liều dùng như thế nào" mà KHÔNG đề cập tên sản phẩm 
-                            → Họ đang hỏi về sản phẩm được đề cập ở CÂU HỎI GẦN NHẤT
-                            - Khi người dùng dùng từ "này", "đó", "thuốc này", "sản phẩm này" 
-                            → Họ đang nói về sản phẩm được đề cập ở câu hỏi trước
-                            - LUÔN ưu tiên sản phẩm từ câu hỏi GẦN NHẤT, không phải câu hỏi cũ hơn
-                            - Nếu không có thông tin trong context, hãy trả lời dựa trên kiến thức của bạn
-                            - Luôn cố gắng hữu ích nhất có thể"""
+📚 THÔNG TIN TỪ CƠ SỞ DỮ LIỆU:
+{context}
+
+💡 HƯỚNG DẪN HIỂU NGỮ CẢNH:
+- Nếu CONTEXT có ghi chú "💡 LƯU Ý: ..." → Đây là thông tin ĐÃ ĐƯỢC MATCH, hãy sử dụng để trả lời!
+- Nếu user hỏi về "giá", "liều dùng", "thành phần" → Tìm thông tin tương ứng trong CONTEXT
+- Nếu user hỏi về bệnh lý (VD: "bổ thận", "tiểu đường") mà CONTEXT trả về sản phẩm điều trị 
+  → ĐÂY LÀ ĐÚNG! Hãy giới thiệu sản phẩm đó!
+- Nếu user hỏi "là gì?", "thành phần?" → Đọc kỹ CONTEXT và tóm tắt thông tin
+- CONTEXT được hệ thống chuẩn bị SẴN cho câu hỏi này, HÃY TIN TƯỞNG và SỬ DỤNG nó!
+
+⚠️ QUAN TRỌNG:
+- HÃY TÌM thông tin trong CONTEXT trước khi nói "không có thông tin"
+- Nếu CONTEXT đề cập đến sản phẩm, công dụng, giá, thành phần → HÃY TRẢ LỜI dựa trên đó
+- Đừng quá khắt khe! Nếu có thông tin → hãy chia sẻ!
+
+🏥 AN TOÀN Y TẾ (Chỉ áp dụng khi cần):
+- Nếu user yêu cầu CHẨN ĐOÁN BỆNH hoặc KÊ ĐƠN THUỐC → Từ chối lịch sự
+- Còn lại → Thoải mái cung cấp THÔNG TIN về sản phẩm"""
         
         # Create prompt with chat history support
         messages = [
@@ -188,56 +203,195 @@ class RAGChain:
         question: str,
         chat_history: Optional[List[BaseMessage]] = None
     ) -> Dict[str, Any]:
-        """Chat with the bot using RAG with ConversationBufferWindowMemory.
+        """Chat with the bot using RAG with strict safety controls and context-aware retrieval.
         
         Args:
             question: User question
             chat_history: Previous messages (optional, will use memory if not provided)
             
         Returns:
-            Response dictionary with answer and metadata
+            Response dictionary with answer, sources, and safety flags
         """
         try:
+            # ✨ VIETNAMESE TEXT NORMALIZATION (NEW!)
+            # Convert text without diacritics to proper Vietnamese with diacritics
+            # Example: "gia bao nhieu" → "giá bao nhiêu"
+            original_question = question
+            question = normalize_vietnamese(question)
+            
+            # 🚨 SAFETY LAYER 1: Question Classification
+            safety_check = self._classify_question_safety(question)
+            if not safety_check["is_safe"]:
+                # Don't call LLM - return safety message immediately
+                # Save to memory even for blocked questions
+                self.memory.save_context(
+                    {"input": question},
+                    {"output": safety_check["message"]}
+                )
+                return {
+                    "answer": safety_check["message"],
+                    "method": "safety_blocked",
+                    "sources": [],
+                    "warning": safety_check["reason"]
+                }
+            
             # Load chat history from memory if not provided
             if chat_history is None:
-                # Get chat history from memory
                 memory_variables = self.memory.load_memory_variables({})
                 chat_history = memory_variables.get("chat_history", [])
-            else:
-                # Use provided chat history (for backward compatibility)
-                pass
             
-            # Prepare input for RAG chain
+            # 🩺 MEDICAL CONDITION DETECTION (NEW - INTELLIGENT!)
+            # Check if user is asking about a medical condition
+            # Example: "thuốc nào bổ thận" → detect "bổ thận" → find "Kidney & Men's"
+            condition_result = detect_condition_and_products(question)
+            
+            if condition_result:
+                # User is asking about a product or condition! Use intelligent search
+                if condition_result['query_type'] == 'product_search':
+                    print(f"🏷️  Product search: {condition_result['products'][0]}")
+                else:
+                    print(f"🩺 Condition detected: {condition_result['condition_name']}")
+                
+                print(f"📦 Matching products: {condition_result['products']}")
+                
+                # Use product names as query for precise retrieval
+                enhanced_query = " ".join(condition_result['products'])
+            else:
+                # No condition detected - use context-aware enhancement
+                # 🔍 CONTEXT-AWARE QUERY ENHANCEMENT
+                # If question is vague (e.g., "giá bao nhiêu?"), enhance with context
+                enhanced_query = self._enhance_query_with_context(question, chat_history)
+            
+            # 🚨 SAFETY LAYER 2: Retrieve documents with score threshold
+            # Use ENHANCED query for better context-aware retrieval
+            retrieved_docs = self.retriever.get_relevant_documents(enhanced_query)
+            
+            print(f"🔍 Original query: {question}")
+            print(f"🔍 Enhanced query: {enhanced_query}")
+            print(f"📄 Retrieved {len(retrieved_docs)} documents")
+            
+            # HARD FALLBACK: If no documents retrieved (all below threshold)
+            if not retrieved_docs or len(retrieved_docs) == 0:
+                fallback_message = (
+                    "❌ Tôi không tìm thấy thông tin phù hợp trong cơ sở dữ liệu để trả lời câu hỏi này.\n\n"
+                    "💡 Vui lòng:\n"
+                    "- Thử diễn đạt câu hỏi khác đi\n"
+                    "- Liên hệ dược sĩ hoặc tra cứu tài liệu chính thức"
+                )
+                # Save to memory even for fallback
+                self.memory.save_context(
+                    {"input": question},
+                    {"output": fallback_message}
+                )
+                return {
+                    "answer": fallback_message,
+                    "method": "no_relevant_context",
+                    "sources": [],
+                    "warning": "No documents passed similarity threshold"
+                }
+            
+            # Format context from retrieved documents
+            from .utils.common import format_docs
+            context = format_docs(retrieved_docs)
+            
+            # 🚨 SAFETY LAYER 3: Double-check context is not empty
+            if not context or context.strip() == "":
+                empty_message = "❌ Không có đủ thông tin để trả lời câu hỏi này. Vui lòng liên hệ dược sĩ."
+                # Save to memory
+                self.memory.save_context(
+                    {"input": question},
+                    {"output": empty_message}
+                )
+                return {
+                    "answer": empty_message,
+                    "method": "empty_context",
+                    "sources": [],
+                    "warning": "Context is empty after formatting"
+                }
+            
+            # 🩺 ADD CONTEXT NOTE if product/condition was detected
+            # This tells LLM that we already matched the query to products
+            if condition_result:
+                if condition_result['query_type'] == 'product_search':
+                    # User asked about a specific product
+                    product_name = condition_result['products'][0]
+                    context_note = f"\n\n💡 LƯU Ý: Người dùng hỏi về sản phẩm '{product_name}'. Thông tin bên dưới là về sản phẩm này. HÃY TRẢ LỜI dựa trên thông tin được cung cấp!\n\n"
+                else:
+                    # User asked about a medical condition
+                    context_note = f"\n\n💡 LƯU Ý: Người dùng hỏi về '{condition_result['condition_name']}'. Thông tin bên dưới là về các sản phẩm điều trị/hỗ trợ tình trạng này: {', '.join(condition_result['products'])}. Hãy trả lời dựa trên thông tin này.\n\n"
+                
+                context = context_note + context
+            
+            # 📊 DEBUG: Log context being sent to LLM
+            print(f"\n{'='*60}")
+            print(f"📋 CONTEXT SENT TO LLM:")
+            print(f"{'='*60}")
+            context_preview = context[:500] + "..." if len(context) > 500 else context
+            print(context_preview)
+            print(f"{'='*60}\n")
+            
+            # 🔧 FIX: Create a custom prompt chain that uses our pre-retrieved context
+            # Instead of letting the RAG chain retrieve again, we pass the context directly
+            # Create a simple chain that uses our prepared context
+            custom_chain = (
+                {
+                    "context": lambda x: context,  # Use our pre-retrieved context with condition note
+                    "question": lambda x: x["question"],
+                    "chat_history": lambda x: x["chat_history"]
+                }
+                | self.prompt
+                | self.llm
+                | StrOutputParser()
+            )
+            
+            # Prepare input for custom chain
             chain_input = {
                 "question": question,
                 "chat_history": chat_history
             }
             
-            # Generate response using RAG chain
-            # The chain will:
-            # 1. Retrieve documents using retriever (with PineconeEmbeddings)
-            # 2. Format documents into context
-            # 3. Pass to LLM with prompt (including chat history)
-            response = self.chain.invoke(chain_input)
+            # Generate response using custom chain with our pre-retrieved context
+            response = custom_chain.invoke(chain_input)
             
-            # Save conversation to memory
-            # Memory will automatically keep only last k exchanges
-            self.memory.save_context(
-                {"input": question},
-                {"output": response}
-            )
+            # 📊 DEBUG: Log LLM response
+            print(f"\n🤖 LLM RESPONSE: {response[:200]}...\n")
+            
+            # Extract sources for logging (not displayed)
+            sources = self._extract_sources(retrieved_docs)
+            
+            # NO citation in response (cleaner UX per user request)
+            # Just return the clean answer
+            
+            # If condition was detected, add product names to response for context
+            # This helps follow-up questions work better
+            if condition_result:
+                # Save with product mention so context knows what we're talking about
+                context_response = f"{response} (Sản phẩm: {', '.join(condition_result['products'])})"
+                self.memory.save_context(
+                    {"input": question},
+                    {"output": context_response}
+                )
+            else:
+                # Regular save
+                self.memory.save_context(
+                    {"input": question},
+                    {"output": response}
+                )
             
             return {
                 "answer": response,
-                "method": "rag"
+                "method": "rag_with_safety",
+                "sources": sources,  # Keep for backend logging
+                "num_sources": len(sources),
+                "warning": None
             }
             
         except Exception as e:
             import traceback
             traceback.print_exc()
             return {
-                "answer": f"Xin lỗi, đã xảy ra lỗi: {str(e)}",
-                "retrieved_documents": [],
+                "answer": "❌ Xin lỗi, đã xảy ra lỗi khi xử lý câu hỏi. Vui lòng thử lại.",
+                "method": "error",
                 "sources": [],
                 "error": str(e)
             }
@@ -246,6 +400,228 @@ class RAGChain:
         """Clear conversation memory."""
         self.memory.clear()
         print("🗑️  Đã xóa lịch sử hội thoại")
+    
+    def _enhance_query_with_context(self, question: str, chat_history: List) -> str:
+        """Enhance query with context from chat history for better retrieval.
+        
+        This solves the problem where "giá bao nhiêu?" doesn't work because
+        retriever doesn't know we're asking about a product from previous conversation.
+        
+        Args:
+            question: Current user question
+            chat_history: Previous conversation messages
+            
+        Returns:
+            Enhanced query string for retrieval
+        """
+        # If question is complete (mentions product name), use as-is
+        product_names = [
+            "fucoidan", "glucan", "kidney", "men's", "power hlp", 
+            "reishi", "paracetamol", "agaricus", "mozuku"
+        ]
+        
+        question_lower = question.lower()
+        
+        # Check if question already has product context
+        has_product = any(name in question_lower for name in product_names)
+        
+        if has_product:
+            # Question is complete, no enhancement needed
+            return question
+        
+        # Check if question is vague (asking about price, dosage, etc. without product)
+        vague_patterns = [
+            "giá", "bao nhiêu", "liều", "dùng", "uống", "viên", "lần",
+            "ngày", "hộp", "tác dụng", "công dụng", "nào", "này", "đó", 
+            "sản phẩm", "thuốc", "có tốt không", "hiệu quả"
+        ]
+        
+        is_vague = any(pattern in question_lower for pattern in vague_patterns)
+        
+        if not is_vague:
+            # Not a follow-up question, use as-is
+            return question
+        
+        # Question is vague - need to add context from history
+        if not chat_history or len(chat_history) == 0:
+            # No history, can't enhance
+            return question
+        
+        # Extract product mentioned in recent history (last 2 exchanges = 4 messages)
+        recent_history = chat_history[-4:] if len(chat_history) >= 4 else chat_history
+        
+        mentioned_product = None
+        for msg in reversed(recent_history):
+            msg_content = msg.content if hasattr(msg, 'content') else str(msg)
+            msg_lower = msg_content.lower()
+            
+            # Find product name in message
+            for product in product_names:
+                if product in msg_lower:
+                    # Extract full product name from message
+                    if "the fucoidan xk" in msg_lower:
+                        mentioned_product = "The Fucoidan xK"
+                    elif "fucoidan" in msg_lower:
+                        mentioned_product = "The Fucoidan"
+                    elif "glucan" in msg_lower:
+                        mentioned_product = "β-Glucan Ball"
+                    elif "kidney" in msg_lower or "men's" in msg_lower:
+                        mentioned_product = "Kidney & Men's"
+                    elif "power hlp" in msg_lower:
+                        mentioned_product = "Power HLP"
+                    elif "reishi" in msg_lower:
+                        mentioned_product = "The Reishi"
+                    elif "paracetamol" in msg_lower:
+                        mentioned_product = "Paracetamol"
+                    
+                    if mentioned_product:
+                        break
+            
+            if mentioned_product:
+                break
+        
+        if mentioned_product:
+            # Enhance query with product context
+            enhanced = f"{mentioned_product} {question}"
+            print(f"🔍 Query enhancement: '{question}' → '{enhanced}'")
+            return enhanced
+        else:
+            # No product found in history
+            return question
+    
+    def _classify_question_safety(self, question: str) -> Dict[str, Any]:
+        """Classify question safety - block medical diagnosis/prescription questions.
+        
+        Args:
+            question: User's question
+            
+        Returns:
+            Dictionary with is_safe, message, reason
+        """
+        question_lower = question.lower()
+        
+        # 🚨 BLOCK 1: Medical diagnosis questions
+        diagnosis_keywords = [
+            "bị", "mắc", "triệu chứng", "dấu hiệu", "đau", "sốt", "ho", "khó thở",
+            "chảy máu", "sưng", "ngứa", "phát ban", "viêm", "nhiễm trùng",
+            "chẩn đoán", "bệnh gì", "có phải", "tôi có", "con tôi", "mẹ tôi"
+        ]
+        
+        diagnosis_patterns = [
+            "nên uống thuốc gì", "uống thuốc nào", "dùng thuốc nào", 
+            "có nên dùng", "có nên uống", "tôi có thể",
+            "được phép", "khỏi bệnh", "chữa được không"
+        ]
+        
+        # Check diagnosis keywords
+        for keyword in diagnosis_keywords:
+            if keyword in question_lower:
+                for pattern in diagnosis_patterns:
+                    if pattern in question_lower:
+                        return {
+                            "is_safe": False,
+                            "message": (
+                                "⚠️ TÔI KHÔNG THỂ ĐƯA RA CHỈ ĐỊNH Y TẾ\n\n"
+                                "Câu hỏi của bạn liên quan đến chẩn đoán hoặc chỉ định điều trị. "
+                                "Đây là việc chỉ bác sĩ hoặc dược sĩ mới có thể làm.\n\n"
+                                "🏥 Vui lòng:\n"
+                                "- Tham khảo ý kiến bác sĩ\n"
+                                "- Đến nhà thuốc gặp dược sĩ\n"
+                                "- Gọi đường dây tư vấn y tế\n\n"
+                                "💡 Tôi chỉ có thể cung cấp THÔNG TIN về các sản phẩm có sẵn, "
+                                "không thay thế tư vấn y tế chuyên môn."
+                            ),
+                            "reason": "medical_diagnosis_blocked"
+                        }
+        
+        # 🚨 BLOCK 2: Prescription/dosage questions without context
+        prescription_alone = [
+            "cho tôi", "bán cho", "mua được không", "liều lượng bao nhiêu",
+            "uống mấy viên", "ngày mấy lần", "khi nào uống"
+        ]
+        
+        # These are OK if asking about specific product, but dangerous if general
+        has_product_context = any([
+            "fucoidan" in question_lower,
+            "glucan" in question_lower,
+            "kidney" in question_lower,
+            "power hlp" in question_lower,
+            "reishi" in question_lower,
+            "paracetamol" in question_lower
+        ])
+        
+        for pattern in prescription_alone:
+            if pattern in question_lower and not has_product_context:
+                # If asking about dosage but no specific product mentioned
+                if any(word in pattern for word in ["liều", "viên", "lần", "uống"]):
+                    return {
+                        "is_safe": False,
+                        "message": (
+                            "⚠️ CẢNH BÁO AN TOÀN\n\n"
+                            "Tôi cần biết BẠN ĐANG HỎI VỀ SẢN PHẨM NÀO để cung cấp thông tin liều dùng.\n\n"
+                            "Vui lòng nêu rõ tên sản phẩm, ví dụ:\n"
+                            "- 'Liều dùng của The Fucoidan là gì?'\n"
+                            "- 'Paracetamol uống như thế nào?'\n\n"
+                            "⚠️ QUAN TRỌNG: Mọi thông tin về liều dùng chỉ mang tính tham khảo. "
+                            "Vui lòng đọc kỹ hướng dẫn sử dụng hoặc tham khảo dược sĩ."
+                        ),
+                        "reason": "dosage_without_product_context"
+                    }
+        
+        # ✅ Question is safe - can proceed with RAG
+        return {
+            "is_safe": True,
+            "message": None,
+            "reason": None
+        }
+    
+    def _extract_sources(self, documents: List) -> List[Dict[str, str]]:
+        """Extract source information from retrieved documents.
+        
+        Args:
+            documents: List of retrieved Document objects
+            
+        Returns:
+            List of source dictionaries
+        """
+        sources = []
+        seen_products = set()
+        
+        for doc in documents:
+            product_name = doc.metadata.get('product_name', 'Unknown')
+            source_file = doc.metadata.get('source', 'traning.json')
+            
+            # Avoid duplicate sources
+            if product_name not in seen_products:
+                sources.append({
+                    'product_name': product_name,
+                    'source_file': source_file,
+                    'doc_type': doc.metadata.get('type', 'product_info')
+                })
+                seen_products.add(product_name)
+        
+        return sources
+    
+    def _format_citation(self, sources: List[Dict[str, str]]) -> str:
+        """Format sources as citation text.
+        
+        Args:
+            sources: List of source dictionaries
+            
+        Returns:
+            Formatted citation string
+        """
+        if not sources:
+            return "\n📚 Nguồn: Không có nguồn tham khảo"
+        
+        citation = "\n📚 **Nguồn thông tin:**"
+        for i, source in enumerate(sources, 1):
+            product_name = source['product_name']
+            citation += f"\n  {i}. {product_name}"
+        
+        citation += "\n\n⚠️ **Lưu ý:** Thông tin chỉ mang tính tham khảo. Vui lòng tham khảo ý kiến dược sĩ hoặc bác sĩ trước khi sử dụng."
+        
+        return citation
 
 
 # Backward compatibility alias
