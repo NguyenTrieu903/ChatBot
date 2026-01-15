@@ -1,8 +1,4 @@
-"""Streamlit UI cho Vietnamese Chatbot với Google Gemini AI."""
-
-# Fix Pinecone deprecated plugin error - MUST be before any imports
-import os
-os.environ.setdefault("PINECONE_DISABLE_DEPRECATED_PLUGIN_CHECK", "1")
+"""Streamlit UI cho Vietnamese Medical Chatbot với ChromaDB + Groq AI."""
 
 import streamlit as st
 import sys
@@ -121,8 +117,8 @@ def main():
     # Header
     st.markdown("""
     <div class="header-container">
-        <h1>🇻🇳 Chatbot AI Tiếng Việt</h1>
-        <p>Powered by Groq AI & Local Embeddings</p>
+        <h1>🏥 Chatbot Y Tế Tiếng Việt</h1>
+        <p>Powered by ChromaDB + LangChain + Groq AI</p>
     </div>
     """, unsafe_allow_html=True)
     

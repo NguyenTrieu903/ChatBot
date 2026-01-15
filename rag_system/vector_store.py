@@ -1,154 +1,101 @@
-"""Production-ready vector store using Pinecone with LangChain best practices.
+"""Production-ready vector store using ChromaDB with LangChain best practices.
 
-Uses PineconeEmbeddings and PineconeVectorStore from langchain-pinecone.
+Uses HuggingFace embeddings (multilingual-e5-large) and ChromaDB for local vector storage.
 """
 
 import os
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Workaround for Pinecone deprecated plugin error
-# This must be done BEFORE importing pinecone
-os.environ.setdefault("PINECONE_DISABLE_DEPRECATED_PLUGIN_CHECK", "1")
-
-# Monkey patch to bypass deprecated plugin check if needed
-try:
-    import pinecone.deprecated_plugins as deprecated_plugins
-    # Override the check function to do nothing
-    deprecated_plugins.check_for_deprecated_plugins = lambda: None
-except (ImportError, AttributeError):
-    pass
-
-from langchain_pinecone import PineconeEmbeddings, PineconeVectorStore
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from pinecone import Pinecone
 
 load_dotenv()
 
 
 class VectorStore:
-    """Pinecone vector store with PineconeEmbeddings.
+    """ChromaDB vector store with HuggingFace embeddings.
     
-    Production-ready implementation using official langchain-pinecone integration.
+    Production-ready implementation using ChromaDB for local, persistent vector storage.
+    No API key required - completely free and local!
     """
 
     def __init__(self, use_case: str = "vietnamese_support"):
-        """Initialize Pinecone vector store.
+        """Initialize ChromaDB vector store.
         
         Args:
             use_case: Use case name (default: vietnamese_support)
         """
         self.use_case = use_case
-        self.index_name = f"{use_case}-index".lower().replace("_", "-")
+        self.collection_name = f"{use_case}_collection".lower().replace("-", "_")
+        
+        # Set up persistent directory for ChromaDB
+        self.persist_directory = os.path.join(
+            Path(__file__).parent.parent, 
+            "chroma_db", 
+            self.collection_name
+        )
+        
+        print(f"💾 ChromaDB persist directory: {self.persist_directory}")
+        
+        # Initialize embeddings
         self.embeddings = self._initialize_embeddings()
-        self.pc = self._initialize_pinecone()
-        self.index = None
-        self.vectorstore: Optional[PineconeVectorStore] = None
         
-        # Ensure index exists
-        self._ensure_index_exists()
+        # Initialize vectorstore (will be created/loaded as needed)
+        self.vectorstore: Optional[Chroma] = None
 
-    def _initialize_embeddings(self) -> PineconeEmbeddings:
-        """Initialize Pinecone embeddings.
+    def _initialize_embeddings(self) -> HuggingFaceEmbeddings:
+        """Initialize HuggingFace embeddings.
+        
+        Uses multilingual-e5-large model for Vietnamese support.
+        Model will be downloaded on first use (~1.5GB).
         
         Returns:
-            PineconeEmbeddings instance with multilingual-e5-large model
+            HuggingFaceEmbeddings instance
         """
-        print("📥 Đang khởi tạo PineconeEmbeddings với model multilingual-e5-large...")
+        print("📥 Initializing HuggingFace embeddings (multilingual-e5-large)...")
+        print("   First time will download model (~1.5GB)...")
         
-        return PineconeEmbeddings(model="multilingual-e5-large")
+        # Use multilingual-e5-large for Vietnamese support
+        embeddings = HuggingFaceEmbeddings(
+            model_name="intfloat/multilingual-e5-large",
+            model_kwargs={'device': 'cpu'},  # Use 'cuda' if GPU available
+            encode_kwargs={'normalize_embeddings': True}
+        )
+        
+        print("✅ Embeddings initialized")
+        return embeddings
 
-    def _initialize_pinecone(self) -> Pinecone:
-        """Initialize Pinecone client.
+    def _get_vectorstore(self) -> Chroma:
+        """Get or create ChromaDB vectorstore instance.
         
         Returns:
-            Pinecone client instance
-            
-        Raises:
-            ValueError: If PINECONE_API_KEY not found
-        """
-        api_key = os.getenv("PINECONE_API_KEY")
-        
-        if not api_key:
-            raise ValueError(
-                "PINECONE_API_KEY not found in .env file. "
-                "Get your API key at: https://app.pinecone.io/"
-            )
-        
-        pc = Pinecone(api_key=api_key)
-        print(f"✅ Pinecone client initialized")
-        return pc
-
-    def _ensure_index_exists(self) -> None:
-        """Create Pinecone index if it doesn't exist.
-        
-        Creates index with appropriate dimensions for multilingual-e5-large (1024 dimensions).
-        """
-        dimension = 1024  # multilingual-e5-large dimension
-        
-        try:
-            existing_indexes = [idx.name for idx in self.pc.list_indexes()]
-            
-            if self.index_name not in existing_indexes:
-                print(f"📦 Creating Pinecone index: {self.index_name}")
-                self.pc.create_index(
-                    name=self.index_name,
-                    dimension=dimension,
-                    metric="cosine",
-                    spec={
-                        "serverless": {
-                            "cloud": "aws",
-                            "region": "us-east-1"
-                        }
-                    }
-                )
-                print(f"✅ Index '{self.index_name}' created")
-                print(f"⏳ Waiting for index to be ready (this may take 1-2 minutes)...")
-                import time
-                # Wait for index to be ready
-                while True:
-                    try:
-                        index_description = self.pc.describe_index(self.index_name)
-                        if hasattr(index_description, 'status') and index_description.status.get('ready'):
-                            print(f"✅ Index '{self.index_name}' is ready!")
-                            break
-                        time.sleep(2)
-                    except:
-                        time.sleep(2)
-            else:
-                print(f"✅ Index '{self.index_name}' already exists")
-                
-        except Exception as e:
-            print(f"⚠️  Could not check/create index: {e}")
-            print(f"   Index '{self.index_name}' will be created on first document upload")
-            print(f"   Or create it manually in Pinecone console: https://app.pinecone.io/")
-
-    def _get_index(self):
-        """Get Pinecone index object.
-        
-        Returns:
-            Pinecone Index object
-        """
-        if self.index is None:
-            self.index = self.pc.Index(self.index_name)
-        return self.index
-
-    def _get_vectorstore(self) -> PineconeVectorStore:
-        """Get or create PineconeVectorStore instance.
-        
-        Returns:
-            PineconeVectorStore instance
+            Chroma vectorstore instance
         """
         if self.vectorstore is None:
-            index = self._get_index()
-            self.vectorstore = PineconeVectorStore(
-                index=index,
-                embedding=self.embeddings
-            )
+            # Try to load existing collection
+            if self.index_exists():
+                print(f"📂 Loading existing ChromaDB collection: {self.collection_name}")
+                self.vectorstore = Chroma(
+                    collection_name=self.collection_name,
+                    embedding_function=self.embeddings,
+                    persist_directory=self.persist_directory
+                )
+                print(f"✅ Loaded collection with {self.vectorstore._collection.count()} documents")
+            else:
+                print(f"📦 Creating new ChromaDB collection: {self.collection_name}")
+                # Create new collection
+                self.vectorstore = Chroma(
+                    collection_name=self.collection_name,
+                    embedding_function=self.embeddings,
+                    persist_directory=self.persist_directory
+                )
         return self.vectorstore
 
     def create_index(self, documents: List[Any]) -> None:
-        """Create Pinecone index from documents.
+        """Create ChromaDB collection from documents.
         
         Args:
             documents: List of Document objects (LangChain) or dictionaries with 'page_content' and 'metadata'
@@ -156,7 +103,7 @@ class VectorStore:
         if not documents:
             raise ValueError("No documents provided")
         
-        print(f"📚 Creating Pinecone index with {len(documents)} documents...")
+        print(f"📚 Creating ChromaDB collection with {len(documents)} documents...")
         
         # Convert to LangChain Documents (handle both Document objects and dicts)
         docs = []
@@ -180,106 +127,119 @@ class VectorStore:
             doc.metadata["use_case"] = self.use_case
             doc.metadata["doc_id"] = i
         
-        # Ensure index exists before trying to use it
-        if not self.index_exists():
-            print(f"⚠️  Index '{self.index_name}' does not exist. Creating it now...")
-            self._ensure_index_exists()
-            # Wait a bit for index to be ready
-            import time
-            time.sleep(3)
-        
-        # Get vectorstore and add documents
+        # Create or update vectorstore
         try:
-            vectorstore = self._get_vectorstore()
-            
-            # Check if index has any vectors
-            index = self._get_index()
-            stats = index.describe_index_stats()
-            existing_vectors = stats.get('total_vector_count', 0)
-            
-            if existing_vectors > 0:
-                print(f"✅ Connecting to existing Pinecone index with {existing_vectors} vectors")
-                print(f"📤 Adding {len(docs)} new documents to Pinecone...")
+            if self.index_exists():
+                # Load existing and add new documents
+                vectorstore = self._get_vectorstore()
+                print(f"📤 Adding {len(docs)} documents to existing collection...")
                 vectorstore.add_documents(docs)
-                print(f"✅ Successfully added {len(docs)} documents to Pinecone")
+                print(f"✅ Successfully added {len(docs)} documents")
             else:
-                # Create new index with documents
-                print(f"📤 Creating new Pinecone index with {len(docs)} documents...")
-                vectorstore.add_documents(docs)
-                print(f"✅ Successfully created Pinecone index with {len(docs)} documents")
+                # Create new collection with documents
+                print(f"📤 Creating new collection with {len(docs)} documents...")
+                self.vectorstore = Chroma.from_documents(
+                    documents=docs,
+                    embedding=self.embeddings,
+                    collection_name=self.collection_name,
+                    persist_directory=self.persist_directory
+                )
+                print(f"✅ Successfully created collection with {len(docs)} documents")
+            
+            # Persist to disk
+            print("💾 Persisting to disk...")
+            if hasattr(self.vectorstore, 'persist'):
+                self.vectorstore.persist()
+            print("✅ Collection persisted successfully")
             
         except Exception as e:
             raise ValueError(
-                f"Failed to create/connect to Pinecone index '{self.index_name}': {e}\n"
-                f"Please create the index manually in Pinecone console: https://app.pinecone.io/"
+                f"Failed to create ChromaDB collection '{self.collection_name}': {e}"
             )
 
     def load_index(self) -> None:
-        """Load existing Pinecone index.
+        """Load existing ChromaDB collection.
         
-        Connects to existing Pinecone index without re-uploading documents.
+        Connects to existing ChromaDB collection without re-uploading documents.
         """
         try:
             vectorstore = self._get_vectorstore()
-            print(f"✅ Connected to Pinecone index: {self.index_name}")
+            doc_count = vectorstore._collection.count()
+            print(f"✅ Connected to ChromaDB collection: {self.collection_name} ({doc_count} documents)")
         except Exception as e:
             raise ValueError(
-                f"Failed to load Pinecone index '{self.index_name}': {e}\n"
-                f"Try running 'python setup.py' to recreate the index, or check PINECONE_API_KEY."
+                f"Failed to load ChromaDB collection '{self.collection_name}': {e}\n"
+                f"Try running 'python setup.py' to recreate the collection."
             )
 
     def index_exists(self) -> bool:
-        """Check if Pinecone index exists.
+        """Check if ChromaDB collection exists.
         
         Returns:
-            True if index exists, False otherwise
+            True if collection exists, False otherwise
         """
         try:
-            existing_indexes = [idx.name for idx in self.pc.list_indexes()]
-            return self.index_name in existing_indexes
-        except:
-            # If check fails, assume index doesn't exist (will be created)
+            # Check if persist directory exists and has data
+            persist_path = Path(self.persist_directory)
+            if not persist_path.exists():
+                return False
+            
+            # Check if directory has ChromaDB files
+            chroma_files = list(persist_path.glob("chroma.sqlite3"))
+            return len(chroma_files) > 0
+            
+        except Exception as e:
+            print(f"⚠️  Error checking collection existence: {e}")
             return False
 
     def delete_index(self) -> None:
-        """Delete Pinecone index (use with caution!).
+        """Delete ChromaDB collection (use with caution!).
         
-        This will permanently delete all vectors in the index.
+        This will permanently delete all vectors in the collection.
         """
         try:
-            self.pc.delete_index(self.index_name)
-            print(f"✅ Deleted index: {self.index_name}")
+            import shutil
+            persist_path = Path(self.persist_directory)
+            if persist_path.exists():
+                shutil.rmtree(persist_path)
+                print(f"✅ Deleted collection: {self.collection_name}")
+                self.vectorstore = None
+            else:
+                print(f"⚠️  Collection directory not found: {self.persist_directory}")
         except Exception as e:
-            raise ValueError(f"Failed to delete index: {e}")
+            raise ValueError(f"Failed to delete collection: {e}")
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get statistics about the Pinecone index.
+        """Get statistics about the ChromaDB collection.
         
         Returns:
-            Dictionary with index statistics
+            Dictionary with collection statistics
         """
         try:
-            index = self._get_index()
-            stats = index.describe_index_stats()
+            vectorstore = self._get_vectorstore()
+            doc_count = vectorstore._collection.count()
+            
             return {
-                "index_name": self.index_name,
-                "total_vectors": stats.get('total_vector_count', 0),
+                "collection_name": self.collection_name,
+                "total_documents": doc_count,
+                "persist_directory": self.persist_directory,
+                "embedding_model": "intfloat/multilingual-e5-large",
                 "dimension": 1024  # multilingual-e5-large dimension
             }
         except Exception as e:
             return {
-                "index_name": self.index_name,
+                "collection_name": self.collection_name,
                 "error": str(e),
-                "note": "Stats unavailable - index may not exist yet"
+                "note": "Stats unavailable - collection may not exist yet"
             }
     
     def get_retriever(self, k: int = 5, score_threshold: Optional[float] = None):
-        """Get LangChain Retriever from Pinecone vector store.
+        """Get LangChain Retriever from ChromaDB vector store.
         
         This is the recommended way to use vector store with LangChain RAG.
         
         Args:
-            k: Number of documents to retrieve (increased for better coverage)
+            k: Number of documents to retrieve
             score_threshold: Minimum similarity score (0-1). If None, no threshold applied.
             
         Returns:
@@ -288,7 +248,6 @@ class VectorStore:
         vectorstore = self._get_vectorstore()
         
         # Create retriever with similarity search
-        # Note: Pinecone uses cosine distance, so lower threshold = more results
         if score_threshold is not None:
             retriever = vectorstore.as_retriever(
                 search_type="similarity_score_threshold",

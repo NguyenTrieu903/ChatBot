@@ -1,19 +1,20 @@
-"""Setup script - Trích xuất dữ liệu và tạo vector index."""
+"""Setup script - Trích xuất dữ liệu và tạo ChromaDB vector index."""
 
 import os
 import sys
 from pathlib import Path
 
 print("\n" + "="*70)
-print("📦 CÀI ĐẶT CHATBOT TIẾNG VIỆT - GROQ AI")
+print("📦 CÀI ĐẶT CHATBOT Y TẾ TIẾNG VIỆT - CHROMADB + GROQ AI")
 print("="*70)
 
 # Step 1: Check libraries
 print("\n[1/3] Kiểm tra thư viện...")
 try:
     import groq
-    import pinecone
+    import chromadb
     import json  # For JSON loading
+    from sentence_transformers import SentenceTransformer
     print("✅ Thư viện OK")
 except ImportError as e:
     print(f"❌ Thiếu thư viện: {e}")
@@ -34,18 +35,12 @@ if not os.getenv("GROQ_API_KEY"):
 else:
     print("✅ GROQ_API_KEY OK")
 
-if not os.getenv("PINECONE_API_KEY"):
-    print("❌ Không tìm thấy PINECONE_API_KEY")
-    print("\n💡 Thêm vào file .env:")
-    print("PINECONE_API_KEY=your-pinecone-api-key")
-    print("\n🔑 Lấy API key miễn phí tại: https://app.pinecone.io/")
-    sys.exit(1)
-else:
-    print("✅ PINECONE_API_KEY OK")
+print("\n💡 ChromaDB không cần API key - hoàn toàn miễn phí và local!")
 
-# Step 3: Create Pinecone index from JSON file with chunking
-print("\n[3/3] Tạo Pinecone index từ JSON (với Chunking)...")
-print("   Flow: JSON Data → Chunking → Embeddings → Pinecone Index")
+# Step 3: Create ChromaDB collection from JSON file with chunking
+print("\n[3/3] Tạo ChromaDB collection từ JSON (với Chunking)...")
+print("   Flow: JSON Data → Chunking → Embeddings → ChromaDB Collection")
+print("   🆓 ChromaDB: Local vector database - no API key needed!")
 try:
     from rag_system.vector_store import VectorStore
     from data_loader import load_and_chunk_json
@@ -71,48 +66,51 @@ try:
     
     print(f"✅ Đã tạo {len(chunked_documents)} chunks từ JSON")
     
-    # Create Pinecone vector store
-    print("📦 Đang kết nối với Pinecone...")
+    # Create ChromaDB vector store
+    print("\n📦 Đang khởi tạo ChromaDB (local vector database)...")
+    print("   Lần đầu sẽ tải embedding model (~1.5GB)...")
     vector_store = VectorStore("vietnamese_support")
     
-    # Check if index exists and has vectors
+    # Check if collection exists and has documents
     if vector_store.index_exists():
         try:
             stats = vector_store.get_stats()
-            vector_count = stats.get('total_vectors', 0)
+            doc_count = stats.get('total_documents', 0)
             
-            if vector_count > 0:
-                print(f"✅ Pinecone index '{vector_store.index_name}' đã tồn tại với {vector_count} vectors")
-                print("💡 Đang tải index hiện có...")
+            if doc_count > 0:
+                print(f"✅ ChromaDB collection '{vector_store.collection_name}' đã tồn tại với {doc_count} documents")
+                print("💡 Đang tải collection hiện có...")
                 vector_store.load_index()
             else:
-                print(f"📤 Index tồn tại nhưng chưa có vectors, đang upload chunks...")
-                print("   Embeddings đang được tạo và upload lên Pinecone...")
+                print(f"📤 Collection tồn tại nhưng chưa có documents, đang thêm chunks...")
+                print("   Embeddings đang được tạo và lưu vào ChromaDB...")
                 vector_store.create_index(chunked_documents)
         except Exception as e:
-            print(f"⚠️  Không thể kiểm tra stats, đang tạo index mới...")
+            print(f"⚠️  Không thể kiểm tra stats, đang tạo collection mới...")
             vector_store.create_index(chunked_documents)
     else:
-        print(f"📤 Đang tạo Pinecone index '{vector_store.index_name}'...")
-        print("   Embeddings đang được tạo và upload lên Pinecone...")
+        print(f"📤 Đang tạo ChromaDB collection '{vector_store.collection_name}'...")
+        print("   Embeddings đang được tạo và lưu vào ChromaDB (local)...")
         vector_store.create_index(chunked_documents)
-        print("✅ Pinecone index đã được tạo và sẵn sàng!")
+        print("✅ ChromaDB collection đã được tạo và sẵn sàng!")
     
     # Show stats
     stats = vector_store.get_stats()
-    print(f"\n📊 Index Statistics:")
-    print(f"   Name: {stats.get('index_name', 'N/A')}")
-    print(f"   Vectors: {stats.get('total_vectors', 'N/A')}")
-    print(f"   Dimension: {stats.get('dimension', 384)}")
+    print(f"\n📊 Collection Statistics:")
+    print(f"   Name: {stats.get('collection_name', 'N/A')}")
+    print(f"   Documents: {stats.get('total_documents', 'N/A')}")
+    print(f"   Dimension: {stats.get('dimension', 1024)}")
+    print(f"   Model: {stats.get('embedding_model', 'N/A')}")
+    print(f"   Location: {stats.get('persist_directory', 'N/A')}")
     
 except Exception as e:
     print(f"❌ Lỗi: {e}")
     import traceback
     traceback.print_exc()
     print("\n💡 Troubleshooting:")
-    print("   1. Kiểm tra PINECONE_API_KEY trong .env")
-    print("   2. Kiểm tra kết nối internet")
-    print("   3. Xem PINECONE_MIGRATION.md để biết thêm")
+    print("   1. Kiểm tra GROQ_API_KEY trong .env")
+    print("   2. Đảm bảo có đủ dung lượng (~2GB cho embedding model)")
+    print("   3. Chạy lại: python setup.py")
     sys.exit(1)
 
 # Success
@@ -120,5 +118,11 @@ print("\n" + "="*70)
 print("🎉 CÀI ĐẶT HOÀN TẤT!")
 print("="*70)
 print("\n📝 Cách sử dụng:")
-print("   python vietnamese_chatbot.py")
+print("   🎨 Web UI:   streamlit run app.py")
+print("   💻 Terminal: python vietnamese_chatbot.py")
+print("\n💡 Ưu điểm ChromaDB:")
+print("   ✅ Hoàn toàn miễn phí - không cần API key")
+print("   ✅ Chạy local - dữ liệu an toàn")
+print("   ✅ Không giới hạn số lượng vector")
+print("   ✅ Tốc độ nhanh với dữ liệu nhỏ-trung bình")
 print("\n" + "="*70)

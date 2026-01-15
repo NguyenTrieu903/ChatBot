@@ -146,41 +146,41 @@ class RAGChain:
             try:
                 self.vector_store.load_index()
                 
-                # Check if index has vectors
+                # Check if collection has documents
                 stats = self.vector_store.get_stats()
-                vector_count = stats.get('total_vectors', 0)
+                vector_count = stats.get('total_documents', 0)
                 
                 if vector_count > 0:
-                    print(f"✅ Pinecone index '{self.vector_store.index_name}' đã tồn tại với {vector_count} vectors")
-                    print("   Sử dụng index hiện có...")
+                    print(f"✅ ChromaDB collection '{self.vector_store.collection_name}' đã tồn tại với {vector_count} documents")
+                    print("   Sử dụng collection hiện có...")
                     return
                 else:
-                    print(f"⚠️  Index tồn tại nhưng chưa có vectors, đang tạo mới...")
+                    print(f"⚠️  Collection tồn tại nhưng chưa có documents, đang tạo mới...")
             except Exception as e:
-                print(f"⚠️  Không thể load index hiện có: {e}")
-                print("   Đang tạo index mới...")
+                print(f"⚠️  Không thể load collection hiện có: {e}")
+                print("   Đang tạo collection mới...")
         
-        # Index doesn't exist or is empty, create new one
-        print(f"📚 Đang tạo Pinecone index cho {self.use_case}...")
+        # Collection doesn't exist or is empty, create new one
+        print(f"📚 Đang tạo ChromaDB collection cho {self.use_case}...")
         
         # Load from JSON file with chunking  
         chunked_docs = load_and_chunk_json("data/traning.json", 1000, 200)
 
-        print("📤 Đang upload chunks lên Pinecone...")
-        print("   (PineconeEmbeddings đang được tạo tự động...)")
+        print("📤 Đang lưu chunks vào ChromaDB...")
+        print("   (HuggingFace embeddings đang được tạo tự động...)")
         self.vector_store.create_index(chunked_docs)
         
-        print(f"✅ Hoàn thành: {len(chunked_docs)} chunks đã được embed và upload lên Pinecone")
+        print(f"✅ Hoàn thành: {len(chunked_docs)} chunks đã được embed và lưu vào ChromaDB")
     
     def _log_index_stats(self):
-        """Log index statistics for debugging."""
+        """Log collection statistics for debugging."""
         try:
             stats = self.vector_store.get_stats()
-            print(f"\n📊 Pinecone Index Statistics: success")
+            print(f"\n📊 ChromaDB Collection Statistics: success")
             if 'error' in stats:
                 print(f"   ⚠️  Warning: {stats.get('error', '')}")
         except Exception as e:
-            print(f"⚠️  Could not get index stats: {e}")
+            print(f"⚠️  Could not get collection stats: {e}")
 
 
     def chat(
