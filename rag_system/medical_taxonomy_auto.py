@@ -35,7 +35,7 @@ MEDICAL_CONDITIONS = {
     "bo_than": {
         "names": ['bổ thận', 'bo than', 'thận', 'than', 'thận yếu'],
         "keywords": ['bổ thận', 'bo than', 'thận', 'than', 'thận yếu'],
-        "products": ['The Fucoidan', 'The Fucoidan xK (Phiên bản nâng cấp)', "Kidney & Men's", 'Power HLP', 'The Reishi']
+        "products": ["Kidney & Men's", 'Power HLP', 'The Fucoidan', 'The Fucoidan xK (Phiên bản nâng cấp)', 'The Reishi']  # Kidney & Men's FIRST - most specific for kidney support
     },
     "tieu_duong": {
         "names": ['tiểu đường', 'tieu duong', 'đái tháo đường', 'dai thao duong', 'diabetes'],

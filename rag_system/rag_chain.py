@@ -48,6 +48,9 @@ class RAGChain:
             k=k  # Keep last k conversation exchanges
         )
         
+        # Track the current product being discussed (for accurate follow-up questions)
+        self.current_product = None
+        
         print("🔗 Creating RAG chain...")
         self.chain = self._create_rag_chain()
         self._log_index_stats()
@@ -75,36 +78,30 @@ class RAGChain:
         Returns:
             ChatPromptTemplate instance
         """
-        system_message = """Bạn là chatbot tư vấn thông tin sản phẩm y tế và thuốc TẬN TÂM và HỮU ÍCH.
+        system_message = """Bạn là trợ lý tư vấn sản phẩm y tế TẬN TÂM và HỮU ÍCH.
 
-🎯 NHIỆM VỤ CHÍNH: Trả lời câu hỏi của người dùng dựa trên thông tin trong CONTEXT bên dưới.
+🎯 NHIỆM VỤ: Trả lời câu hỏi dựa trên THÔNG TIN ĐƯỢC CUNG CẤP bên dưới.
 
-✅ QUY TẮC TRẢ LỜI:
-1. HÃY TÌM thông tin trong CONTEXT và TRẢ LỜI một cách TỰ NHIÊN, HỮU ÍCH
-2. Nếu CONTEXT có thông tin liên quan → BẮT BUỘC phải trả lời (đừng sợ!)
-3. CHỈ nói "Tôi không tìm thấy thông tin..." khi CONTEXT thực sự RỖNG hoặc HOÀN TOÀN KHÔNG LIÊN QUAN
-4. KHÔNG sử dụng kiến thức bên ngoài, CHỈ dùng thông tin từ CONTEXT
-5. Trả lời ngắn gọn, rõ ràng, thân thiện
-
-📚 THÔNG TIN TỪ CƠ SỞ DỮ LIỆU:
+📚 THÔNG TIN ĐƯỢC CUNG CẤP:
 {context}
 
-💡 HƯỚNG DẪN HIỂU NGỮ CẢNH:
-- Nếu CONTEXT có ghi chú "💡 LƯU Ý: ..." → Đây là thông tin ĐÃ ĐƯỢC MATCH, hãy sử dụng để trả lời!
-- Nếu user hỏi về "giá", "liều dùng", "thành phần" → Tìm thông tin tương ứng trong CONTEXT
-- Nếu user hỏi về bệnh lý (VD: "bổ thận", "tiểu đường") mà CONTEXT trả về sản phẩm điều trị 
-  → ĐÂY LÀ ĐÚNG! Hãy giới thiệu sản phẩm đó!
-- Nếu user hỏi "là gì?", "thành phần?" → Đọc kỹ CONTEXT và tóm tắt thông tin
-- CONTEXT được hệ thống chuẩn bị SẴN cho câu hỏi này, HÃY TIN TƯỞNG và SỬ DỤNG nó!
+✅ CÁCH TRẢ LỜI:
+1. ĐỌC kỹ thông tin được cung cấp
+2. TRẢ LỜI trực tiếp, rõ ràng, tự nhiên
+3. TRÍCH XUẤT thông tin cụ thể: giá, liều dùng, thành phần, công dụng
+4. KHÔNG nói "không có thông tin" khi thông tin ĐÃ CÓ TRONG CONTEXT
+5. KHÔNG sử dụng kiến thức ngoài CONTEXT
 
-⚠️ QUAN TRỌNG:
-- HÃY TÌM thông tin trong CONTEXT trước khi nói "không có thông tin"
-- Nếu CONTEXT đề cập đến sản phẩm, công dụng, giá, thành phần → HÃY TRẢ LỜI dựa trên đó
-- Đừng quá khắt khe! Nếu có thông tin → hãy chia sẻ!
+💡 LƯU Ý:
+- Nếu có ghi chú "💡 LƯU Ý: Người dùng hỏi về..." → Thông tin phía dưới ĐÃ LIÊN QUAN, hãy dùng!
+- User hỏi "giá?" → Tìm số tiền trong thông tin
+- User hỏi "thành phần?" → Tìm danh sách thành phần
+- User hỏi "liều dùng?" → Tìm số viên/ngày
+- User hỏi về bệnh lý → Giới thiệu sản phẩm phù hợp
 
-🏥 AN TOÀN Y TẾ (Chỉ áp dụng khi cần):
-- Nếu user yêu cầu CHẨN ĐOÁN BỆNH hoặc KÊ ĐƠN THUỐC → Từ chối lịch sự
-- Còn lại → Thoải mái cung cấp THÔNG TIN về sản phẩm"""
+⚠️ CHỈ từ chối khi user yêu cầu CHẨN ĐOÁN hoặc KÊ ĐƠN
+
+TRÍCH XUẤT và TRẢ LỜI dựa trên thông tin có sẵn!"""
         
         # Create prompt with chat history support
         messages = [
@@ -253,6 +250,10 @@ class RAGChain:
                     print(f"🩺 Condition detected: {condition_result['condition_name']}")
                 
                 print(f"📦 Matching products: {condition_result['products']}")
+                
+                # 🎯 Track the PRIMARY product (first one in list - most relevant)
+                self.current_product = condition_result['products'][0]
+                print(f"🎯 Setting current product: {self.current_product}")
                 
                 # Use product names as query for precise retrieval
                 enhanced_query = " ".join(condition_result['products'])
@@ -443,6 +444,13 @@ class RAGChain:
             return question
         
         # Question is vague - need to add context from history
+        # 🎯 PRIORITY 1: Use tracked current product (most accurate!)
+        if self.current_product:
+            enhanced = f"{self.current_product} {question}"
+            print(f"🔍 Query enhancement (tracked product): '{question}' → '{enhanced}'")
+            return enhanced
+        
+        # 🎯 PRIORITY 2: Search chat history if no tracked product
         if not chat_history or len(chat_history) == 0:
             # No history, can't enhance
             return question
@@ -455,27 +463,21 @@ class RAGChain:
             msg_content = msg.content if hasattr(msg, 'content') else str(msg)
             msg_lower = msg_content.lower()
             
-            # Find product name in message
-            for product in product_names:
-                if product in msg_lower:
-                    # Extract full product name from message
-                    if "the fucoidan xk" in msg_lower:
-                        mentioned_product = "The Fucoidan xK"
-                    elif "fucoidan" in msg_lower:
-                        mentioned_product = "The Fucoidan"
-                    elif "glucan" in msg_lower:
-                        mentioned_product = "β-Glucan Ball"
-                    elif "kidney" in msg_lower or "men's" in msg_lower:
-                        mentioned_product = "Kidney & Men's"
-                    elif "power hlp" in msg_lower:
-                        mentioned_product = "Power HLP"
-                    elif "reishi" in msg_lower:
-                        mentioned_product = "The Reishi"
-                    elif "paracetamol" in msg_lower:
-                        mentioned_product = "Paracetamol"
-                    
-                    if mentioned_product:
-                        break
+            # Find product name in message (look for most specific first)
+            if "kidney" in msg_lower and "men" in msg_lower:
+                mentioned_product = "Kidney & Men's"
+            elif "the fucoidan xk" in msg_lower or "fucoidan xk" in msg_lower:
+                mentioned_product = "The Fucoidan xK"
+            elif "the fucoidan" in msg_lower or ("fucoidan" in msg_lower and "the" in msg_lower):
+                mentioned_product = "The Fucoidan"
+            elif "glucan" in msg_lower:
+                mentioned_product = "β-Glucan Ball"
+            elif "power hlp" in msg_lower or "power" in msg_lower:
+                mentioned_product = "Power HLP"
+            elif "reishi" in msg_lower:
+                mentioned_product = "The Reishi"
+            elif "paracetamol" in msg_lower:
+                mentioned_product = "Paracetamol"
             
             if mentioned_product:
                 break
@@ -483,7 +485,7 @@ class RAGChain:
         if mentioned_product:
             # Enhance query with product context
             enhanced = f"{mentioned_product} {question}"
-            print(f"🔍 Query enhancement: '{question}' → '{enhanced}'")
+            print(f"🔍 Query enhancement (from history): '{question}' → '{enhanced}'")
             return enhanced
         else:
             # No product found in history
