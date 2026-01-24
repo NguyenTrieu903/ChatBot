@@ -10,6 +10,7 @@ langchain-groq>=0.2.0
 langchain-community>=0.0.10
 langchain-text-splitters>=0.2.0  # Text chunking
 langchain-chroma>=0.1.0  # ChromaDB integration
+langchain-huggingface>=0.1.0  # HuggingFace embeddings (updated)
 
 # Vector database - ChromaDB (Free, Local, No API key needed!)
 chromadb>=0.4.22

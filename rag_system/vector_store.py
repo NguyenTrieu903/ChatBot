@@ -8,7 +8,12 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 from dotenv import load_dotenv
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
+# [AGENT: OLD CODE] from langchain_community.embeddings import HuggingFaceEmbeddings
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except ImportError:
+    # Fallback to old import if langchain-huggingface not installed
+    from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 

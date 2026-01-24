@@ -274,7 +274,8 @@ TRÍCH XUẤT và TRẢ LỜI dựa trên thông tin có sẵn!"""
             
             # 🚨 SAFETY LAYER 2: Retrieve documents with score threshold
             # Use ENHANCED query for better context-aware retrieval
-            retrieved_docs = self.retriever.get_relevant_documents(enhanced_query)
+            # [AGENT: OLD CODE] retrieved_docs = self.retriever.get_relevant_documents(enhanced_query)
+            retrieved_docs = self.retriever.invoke(enhanced_query)
             
             print(f"🔍 Original query: {question}")
             print(f"🔍 Enhanced query: {enhanced_query}")
