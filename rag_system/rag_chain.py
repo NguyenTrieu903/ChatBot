@@ -5,7 +5,9 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
-from langchain.memory import ConversationBufferWindowMemory
+# [AGENT: OLD CODE] from langchain.memory import ConversationBufferWindowMemory
+from langchain_community.chat_message_histories import ChatMessageHistory
+# [AGENT: OLD CODE] from langchain_core.runnables.history import RunnableWithMessageHistory
 from dotenv import load_dotenv
 
 from .vector_store import VectorStore
@@ -39,14 +41,19 @@ class RAGChain:
         # For medical safety: strict threshold 0.7 to prevent irrelevant context
         self.retriever = self.vector_store.get_retriever(k=5, score_threshold=0.7)
         
-        # Initialize ConversationBufferWindowMemory
-        # k=5 means keep last 5 conversation exchanges (10 messages: 5 user + 5 assistant)
-        print(f"💾 Initializing ConversationBufferWindowMemory (k={k})...")
-        self.memory = ConversationBufferWindowMemory(
-            memory_key="chat_history",
-            return_messages=True,
-            k=k  # Keep last k conversation exchanges
-        )
+        # [AGENT: OLD CODE] Initialize ConversationBufferWindowMemory
+        # [AGENT: OLD CODE] k=5 means keep last 5 conversation exchanges (10 messages: 5 user + 5 assistant)
+        # [AGENT: OLD CODE] print(f"💾 Initializing ConversationBufferWindowMemory (k={k})...")
+        # [AGENT: OLD CODE] self.memory = ConversationBufferWindowMemory(
+        # [AGENT: OLD CODE]     memory_key="chat_history",
+        # [AGENT: OLD CODE]     return_messages=True,
+        # [AGENT: OLD CODE]     k=k  # Keep last k conversation exchanges
+        # [AGENT: OLD CODE] )
+        
+        # Initialize chat history storage with window size
+        print(f"💾 Initializing chat message history (window size: {k})...")
+        self.chat_history = ChatMessageHistory()
+        self.memory_window_size = k  # Keep last k conversation exchanges
         
         # Track the current product being discussed (for accurate follow-up questions)
         self.current_product = None
@@ -221,10 +228,11 @@ TRÍCH XUẤT và TRẢ LỜI dựa trên thông tin có sẵn!"""
             if not safety_check["is_safe"]:
                 # Don't call LLM - return safety message immediately
                 # Save to memory even for blocked questions
-                self.memory.save_context(
-                    {"input": question},
-                    {"output": safety_check["message"]}
-                )
+                # [AGENT: OLD CODE] self.memory.save_context(
+                # [AGENT: OLD CODE]     {"input": question},
+                # [AGENT: OLD CODE]     {"output": safety_check["message"]}
+                # [AGENT: OLD CODE] )
+                self._save_to_history(question, safety_check["message"])
                 return {
                     "answer": safety_check["message"],
                     "method": "safety_blocked",
@@ -234,8 +242,9 @@ TRÍCH XUẤT và TRẢ LỜI dựa trên thông tin có sẵn!"""
             
             # Load chat history from memory if not provided
             if chat_history is None:
-                memory_variables = self.memory.load_memory_variables({})
-                chat_history = memory_variables.get("chat_history", [])
+                # [AGENT: OLD CODE] memory_variables = self.memory.load_memory_variables({})
+                # [AGENT: OLD CODE] chat_history = memory_variables.get("chat_history", [])
+                chat_history = self._get_windowed_history()
             
             # 🩺 MEDICAL CONDITION DETECTION (NEW - INTELLIGENT!)
             # Check if user is asking about a medical condition
@@ -280,10 +289,11 @@ TRÍCH XUẤT và TRẢ LỜI dựa trên thông tin có sẵn!"""
                     "- Liên hệ dược sĩ hoặc tra cứu tài liệu chính thức"
                 )
                 # Save to memory even for fallback
-                self.memory.save_context(
-                    {"input": question},
-                    {"output": fallback_message}
-                )
+                # [AGENT: OLD CODE] self.memory.save_context(
+                # [AGENT: OLD CODE]     {"input": question},
+                # [AGENT: OLD CODE]     {"output": fallback_message}
+                # [AGENT: OLD CODE] )
+                self._save_to_history(question, fallback_message)
                 return {
                     "answer": fallback_message,
                     "method": "no_relevant_context",
@@ -299,10 +309,11 @@ TRÍCH XUẤT và TRẢ LỜI dựa trên thông tin có sẵn!"""
             if not context or context.strip() == "":
                 empty_message = "❌ Không có đủ thông tin để trả lời câu hỏi này. Vui lòng liên hệ dược sĩ."
                 # Save to memory
-                self.memory.save_context(
-                    {"input": question},
-                    {"output": empty_message}
-                )
+                # [AGENT: OLD CODE] self.memory.save_context(
+                # [AGENT: OLD CODE]     {"input": question},
+                # [AGENT: OLD CODE]     {"output": empty_message}
+                # [AGENT: OLD CODE] )
+                self._save_to_history(question, empty_message)
                 return {
                     "answer": empty_message,
                     "method": "empty_context",
@@ -368,16 +379,18 @@ TRÍCH XUẤT và TRẢ LỜI dựa trên thông tin có sẵn!"""
             if condition_result:
                 # Save with product mention so context knows what we're talking about
                 context_response = f"{response} (Sản phẩm: {', '.join(condition_result['products'])})"
-                self.memory.save_context(
-                    {"input": question},
-                    {"output": context_response}
-                )
+                # [AGENT: OLD CODE] self.memory.save_context(
+                # [AGENT: OLD CODE]     {"input": question},
+                # [AGENT: OLD CODE]     {"output": context_response}
+                # [AGENT: OLD CODE] )
+                self._save_to_history(question, context_response)
             else:
                 # Regular save
-                self.memory.save_context(
-                    {"input": question},
-                    {"output": response}
-                )
+                # [AGENT: OLD CODE] self.memory.save_context(
+                # [AGENT: OLD CODE]     {"input": question},
+                # [AGENT: OLD CODE]     {"output": response}
+                # [AGENT: OLD CODE] )
+                self._save_to_history(question, response)
             
             return {
                 "answer": response,
@@ -399,8 +412,36 @@ TRÍCH XUẤT và TRẢ LỜI dựa trên thông tin có sẵn!"""
     
     def clear_memory(self):
         """Clear conversation memory."""
-        self.memory.clear()
+        # [AGENT: OLD CODE] self.memory.clear()
+        self.chat_history.clear()
         print("🗑️  Đã xóa lịch sử hội thoại")
+    
+    def _save_to_history(self, question: str, answer: str):
+        """Save question and answer to chat history with window size limit.
+        
+        Args:
+            question: User question
+            answer: AI answer
+        """
+        from langchain_core.messages import HumanMessage, AIMessage
+        
+        self.chat_history.add_message(HumanMessage(content=question))
+        self.chat_history.add_message(AIMessage(content=answer))
+        
+        # Apply window size limit (keep last k*2 messages: k pairs of user+assistant)
+        messages = self.chat_history.messages
+        max_messages = self.memory_window_size * 2  # k exchanges = k*2 messages
+        if len(messages) > max_messages:
+            # Keep only the most recent messages
+            self.chat_history.messages = messages[-max_messages:]
+    
+    def _get_windowed_history(self) -> List[BaseMessage]:
+        """Get chat history with window size applied.
+        
+        Returns:
+            List of messages (limited by window size)
+        """
+        return self.chat_history.messages
     
     def _enhance_query_with_context(self, question: str, chat_history: List) -> str:
         """Enhance query with context from chat history for better retrieval.
