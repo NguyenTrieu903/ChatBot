@@ -16,7 +16,7 @@ sys.path.append(str(Path(__file__).parent))
 # Load environment variables
 load_dotenv()
 
-from rag_system.retrieval_chain import RetrievalChain
+from rag_system.rag_chain import RAGChain
 from langchain_core.messages import HumanMessage, AIMessage
 
 
@@ -173,7 +173,7 @@ def main():
         # Initialize RAG chain
         with st.spinner("🤖 Initializing chatbot..."):
             try:
-                st.session_state.rag_chain = RetrievalChain(use_case="vietnamese_support", k=5)
+                st.session_state.rag_chain = RAGChain(use_case="vietnamese_support", k=5)
                 st.session_state.initialized = True
             except Exception as e:
                 st.error(f"❌ Error initializing chatbot: {str(e)}")
