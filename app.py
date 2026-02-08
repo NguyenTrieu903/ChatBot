@@ -95,9 +95,8 @@ def check_environment():
     return True
 
 
-@st.cache_resource
 def auto_initialize_chromadb():
-    """Auto-initialize ChromaDB if not exists. Cached to avoid reloading on each session."""
+    """Auto-initialize ChromaDB if not exists."""
     from rag_system.vector_store import VectorStore
     from data_loader import load_and_chunk_json
     
@@ -105,22 +104,36 @@ def auto_initialize_chromadb():
     vector_store = VectorStore("vietnamese_support")
     
     if not vector_store.index_exists():
-        st.info("📥 ChromaDB not found. Please run initialization script first.")
-        st.info("💡 Run: python -c \"from app import auto_initialize_chromadb; auto_initialize_chromadb()\"")
-        return False
-    
-    # Load existing index
-    try:
-        vector_store.load_index()
-        stats = vector_store.get_stats()
-        doc_count = stats.get('total_documents', 0)
-        if doc_count == 0:
-            st.warning("⚠️ ChromaDB exists but is empty. Please reinitialize.")
+        with st.spinner("🔧 First time setup: Initializing ChromaDB... (this may take a few minutes)"):
+            st.info("📥 Downloading embedding model and creating vector database...")
+            
+            # Load and chunk data
+            json_file = "data/traning.json"
+            if not os.path.exists(json_file):
+                st.error(f"❌ Training data not found: {json_file}")
+                return False
+            
+            try:
+                chunked_documents = load_and_chunk_json(json_file, chunk_size=1000, chunk_overlap=200)
+                vector_store.create_index(chunked_documents)
+                st.success("✅ ChromaDB initialized successfully!")
+                return True
+            except Exception as e:
+                st.error(f"❌ Error initializing ChromaDB: {str(e)}")
+                return False
+    else:
+        # Load existing index
+        try:
+            vector_store.load_index()
+            stats = vector_store.get_stats()
+            doc_count = stats.get('total_documents', 0)
+            if doc_count == 0:
+                st.warning("⚠️ ChromaDB exists but is empty. Reinitializing...")
+                return auto_initialize_chromadb()
+            return True
+        except Exception as e:
+            st.error(f"❌ Error loading ChromaDB: {str(e)}")
             return False
-        return True
-    except Exception as e:
-        st.error(f"❌ Error loading ChromaDB: {str(e)}")
-        return False
 
 
 @st.cache_resource
@@ -133,6 +146,8 @@ def initialize_session_state():
     """Initialize session state variables."""
     if 'messages' not in st.session_state:
         st.session_state.messages = []
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = False
 
 
 def display_message(message: dict, index: int):
@@ -152,12 +167,22 @@ def main():
     if not check_environment():
         return
     
-    # Initialize ChromaDB (cached - runs once across all sessions)
-    if not auto_initialize_chromadb():
-        st.stop()
+    # Auto-initialize ChromaDB (first time only - per session)
+    if not st.session_state.initialized:
+        auto_initialize_chromadb()
+        
+        # Initialize RAG chain
+        with st.spinner("🤖 Initializing chatbot..."):
+            try:
+                st.session_state.rag_chain = get_rag_chain()
+                st.session_state.initialized = True
+            except Exception as e:
+                st.error(f"❌ Error initializing chatbot: {str(e)}")
+                st.info("💡 Please check your .env file and API key")
+                st.stop()
     
-    # Get RAG chain (cached - model loaded once across all sessions)
-    rag_chain = get_rag_chain()
+    # Get RAG chain from session state
+    rag_chain = st.session_state.rag_chain
     
     # Header
     st.markdown("""
